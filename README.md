@@ -2,7 +2,7 @@
 
 Device responsible of the TS activation logic and R2D mode
 
-![alt text](image.png)
+![alt text](<docs/3D View.png>)
 
 _The PCB design is still under testing and may change in the future._ 
 
@@ -47,7 +47,7 @@ _The PCB design is still under testing and may change in the future._
 
 ### Pinouts
 
-![pinout](docs/image.png)
+![alt text](docs/pinouts.png)
 
 
 ### Peripherals

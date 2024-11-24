@@ -22,8 +22,20 @@ _The PCB design is still under testing and may change in the future._
 
 ## Functional Description
 
-- Functional Description goes here
-- What it should do?
+### 1. TS Inactive:
+
+- **System Off:** High-voltage system deactivated for safety.
+- **Transition:** Activates after safety checks are completed.
+
+### 2. TS Active:
+
+- **System Powered, Not Drivable:** High-voltage on, no torque output.
+- **Transition:** Requires driver readiness (brake pressed + R2D button)
+
+### 3. R2D (Ready to Drive):
+
+- **Operational:** Torque output enables based on throttle input.
+- **Transition:** Returns to inactive or active on error or driver command.
 
 
 ## Software Design Notes

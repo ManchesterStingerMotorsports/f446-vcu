@@ -79,8 +79,8 @@ static void MX_ADC2_Init(void);
 static void MX_CAN1_Init(void);
 static void MX_CAN2_Init(void);
 static void MX_I2C1_Init(void);
-static void MX_SDIO_SD_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_SDIO_SD_Init(void);
 void taskMain_func(void *argument);
 void taskFaultHandler_func(void *argument);
 
@@ -127,8 +127,8 @@ int main(void)
   MX_CAN1_Init();
   MX_CAN2_Init();
   MX_I2C1_Init();
-  MX_SDIO_SD_Init();
   MX_USART2_UART_Init();
+  MX_SDIO_SD_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -205,18 +205,11 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
   RCC_OscInitStruct.PLL.PLLM = 4;
-  RCC_OscInitStruct.PLL.PLLN = 180;
+  RCC_OscInitStruct.PLL.PLLN = 168;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
-  RCC_OscInitStruct.PLL.PLLQ = 8;
+  RCC_OscInitStruct.PLL.PLLQ = 7;
   RCC_OscInitStruct.PLL.PLLR = 2;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Activate the Over-Drive mode
-  */
-  if (HAL_PWREx_EnableOverDrive() != HAL_OK)
   {
     Error_Handler();
   }
@@ -462,6 +455,27 @@ static void MX_SDIO_SD_Init(void)
 
   /* USER CODE BEGIN SDIO_Init 1 */
 
+    hsd.Instance = SDIO;
+    hsd.Init.ClockEdge = SDIO_CLOCK_EDGE_RISING;
+    hsd.Init.ClockBypass = SDIO_CLOCK_BYPASS_DISABLE;
+    hsd.Init.ClockPowerSave = SDIO_CLOCK_POWER_SAVE_DISABLE;
+    // Corrected to 1B for initialisation: https://community.st.com/t5/stm32cubemx-mcus/sdio-interface-not-working-in-4bits-with-stm32f4-firmware/m-p/625603#M26901
+    // SDIO always init at 1B bus width
+    hsd.Init.BusWide = SDIO_BUS_WIDE_1B;
+    hsd.Init.HardwareFlowControl = SDIO_HARDWARE_FLOW_CONTROL_DISABLE;
+    hsd.Init.ClockDiv = 0;
+    if (HAL_SD_Init(&hsd) != HAL_OK)
+    {
+      Error_Handler();
+    }
+    if (HAL_SD_ConfigWideBusOperation(&hsd, SDIO_BUS_WIDE_4B) != HAL_OK)
+    {
+      Error_Handler();
+    }
+
+#define ONLY_USER_INIT // Tired of editing the code every time you change, the line "hsd.Init.BusWide = SDIO_BUS_WIDE_4B;"
+#ifndef ONLY_USER_INIT
+
   /* USER CODE END SDIO_Init 1 */
   hsd.Instance = SDIO;
   hsd.Init.ClockEdge = SDIO_CLOCK_EDGE_RISING;
@@ -479,6 +493,8 @@ static void MX_SDIO_SD_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN SDIO_Init 2 */
+
+#endif
 
   /* USER CODE END SDIO_Init 2 */
 
@@ -600,7 +616,8 @@ void taskMain_func(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+      HAL_GPIO_TogglePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin);
+      osDelay(241);
   }
   /* USER CODE END 5 */
 }
@@ -618,7 +635,8 @@ void taskFaultHandler_func(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+      HAL_GPIO_TogglePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin);
+      osDelay(157);
   }
   /* USER CODE END taskFaultHandler_func */
 }

@@ -37,6 +37,8 @@ extern "C" {
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
 
+extern UART_HandleTypeDef huart2;
+
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/
@@ -71,8 +73,10 @@ void Error_Handler(void);
 #define ADC_APPS1_GPIO_Port GPIOA
 #define IT_TS_BUTTON_Pin GPIO_PIN_7
 #define IT_TS_BUTTON_GPIO_Port GPIOA
+#define IT_TS_BUTTON_EXTI_IRQn EXTI9_5_IRQn
 #define IT_R2D_BUTTON_Pin GPIO_PIN_4
 #define IT_R2D_BUTTON_GPIO_Port GPIOC
+#define IT_R2D_BUTTON_EXTI_IRQn EXTI4_IRQn
 #define DO_R2D_SOUND_Pin GPIO_PIN_0
 #define DO_R2D_SOUND_GPIO_Port GPIOB
 #define DO_R2D_LIGHT_Pin GPIO_PIN_1
@@ -89,6 +93,7 @@ void Error_Handler(void);
 #define SWO_GPIO_Port GPIOB
 #define IT_SC_IN_Pin GPIO_PIN_6
 #define IT_SC_IN_GPIO_Port GPIOB
+#define IT_SC_IN_EXTI_IRQn EXTI9_5_IRQn
 #define DO_SC_RELAY_Pin GPIO_PIN_7
 #define DO_SC_RELAY_GPIO_Port GPIOB
 

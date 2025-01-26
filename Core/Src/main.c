@@ -23,6 +23,13 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+#include "stdbool.h"
+#include "string.h"
+#include "stdio.h"
+
+#include "uartDMA.h"
+#include "ssd1306.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -48,23 +55,25 @@ CAN_HandleTypeDef hcan1;
 CAN_HandleTypeDef hcan2;
 
 I2C_HandleTypeDef hi2c1;
+DMA_HandleTypeDef hdma_i2c1_tx;
 
 SD_HandleTypeDef hsd;
 
 UART_HandleTypeDef huart2;
+DMA_HandleTypeDef hdma_usart2_tx;
 
 /* Definitions for taskMain */
 osThreadId_t taskMainHandle;
 const osThreadAttr_t taskMain_attributes = {
   .name = "taskMain",
-  .stack_size = 128 * 4,
+  .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for taskFaultHandler */
 osThreadId_t taskFaultHandlerHandle;
 const osThreadAttr_t taskFaultHandler_attributes = {
   .name = "taskFaultHandler",
-  .stack_size = 128 * 4,
+  .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
 /* USER CODE BEGIN PV */
@@ -74,6 +83,7 @@ const osThreadAttr_t taskFaultHandler_attributes = {
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_ADC2_Init(void);
 static void MX_CAN1_Init(void);
@@ -90,6 +100,13 @@ void taskFaultHandler_func(void *argument);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+bool sd_checkCard(void)
+{
+    return HAL_GPIO_ReadPin (SD_CARD_DETECT_GPIO_Port, SD_CARD_DETECT_Pin);
+}
+
+
 
 /* USER CODE END 0 */
 
@@ -122,6 +139,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_ADC1_Init();
   MX_ADC2_Init();
   MX_CAN1_Init();
@@ -130,6 +148,14 @@ int main(void)
   MX_USART2_UART_Init();
   MX_SDIO_SD_Init();
   /* USER CODE BEGIN 2 */
+
+  // MUST COMMENT/REMOVE MX_SDIO_SD_Init() ABOVE
+  // Init only if SD Card is present otherwise it will throw error if sd not present
+  if (sd_checkCard())
+  {
+      MX_SDIO_SD_Init();
+  }
+
 
   /* USER CODE END 2 */
 
@@ -423,7 +449,7 @@ static void MX_I2C1_Init(void)
 
   /* USER CODE END I2C1_Init 1 */
   hi2c1.Instance = I2C1;
-  hi2c1.Init.ClockSpeed = 100000;
+  hi2c1.Init.ClockSpeed = 400000;
   hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
   hi2c1.Init.OwnAddress1 = 0;
   hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
@@ -534,6 +560,25 @@ static void MX_USART2_UART_Init(void)
 }
 
 /**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream6_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
+  /* DMA1_Stream7_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream7_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream7_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -586,7 +631,7 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin : SD_CARD_DETECT_Pin */
   GPIO_InitStruct.Pin = SD_CARD_DETECT_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(SD_CARD_DETECT_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : IT_SC_IN_Pin */
@@ -595,11 +640,87 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(IT_SC_IN_GPIO_Port, &GPIO_InitStruct);
 
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI4_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI4_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
+
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
+
+int count = 0;
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    switch (GPIO_Pin)
+    {
+        case IT_TS_BUTTON_Pin:
+            HAL_GPIO_WritePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin, GPIO_PIN_RESET);
+            HAL_GPIO_TogglePin(DO_SC_RELAY_GPIO_Port, DO_SC_RELAY_Pin);
+            break;
+
+        case IT_R2D_BUTTON_Pin:
+            HAL_GPIO_WritePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin, GPIO_PIN_SET);
+            HAL_GPIO_TogglePin(DO_SC_RELAY_GPIO_Port, DO_SC_RELAY_Pin);
+            break;
+
+        case IT_SC_IN_Pin:
+            printfDma("TRIGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGERRED\n");
+            break;
+
+        default:
+            count++;
+    }
+
+//    if(GPIO_Pin == SD_CARD_DETECT_Pin) // If The INT Source Is EXTI Line9 (A9 Pin)
+//    {
+//        count++;
+//    }
+}
+
+uint32_t prevTime = 0;
+uint32_t timeDiff = 0;
+uint32_t currTime = 0;
+
+uint16_t w = 0;
+
+void ssd1306_RasterIntCallback(uint8_t r)
+{
+    currTime = HAL_GetTick();
+    timeDiff = currTime - prevTime;
+    prevTime = currTime;
+
+    w = (uint16_t)((128 * (currTime % 1000)) / 1000);
+
+    //timeDiff = currTime - prevTime;
+//    if(r == 0 || r == 1)
+//    {
+//        ssd1306_SetColor(Black);
+//        ssd1306_Fill();
+//    }
+//    else if(r == 2 || r == 3)
+//    {
+//        ssd1306_SetColor(White);
+//        ssd1306_Fill();
+//    }
+
+    ssd1306_SetColor(Black);
+    ssd1306_Fill();
+
+    ssd1306_SetColor(White);
+    ssd1306_DrawRect(0, 0, w, 8);
+    ssd1306_DrawRect(0, 22, w, 8);
+
+    char msg[32];
+    snprintf(msg, 64, "FPS: %.0lf (%ld ms)", 1 / ((float)timeDiff/1000.0), timeDiff);
+    ssd1306_SetCursor(2, 11);
+    ssd1306_WriteString(msg, Font_7x10);
+}
 
 /* USER CODE END 4 */
 
@@ -613,12 +734,20 @@ static void MX_GPIO_Init(void)
 void taskMain_func(void *argument)
 {
   /* USER CODE BEGIN 5 */
-  /* Infinite loop */
-  for(;;)
-  {
-      HAL_GPIO_TogglePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin);
-      osDelay(241);
-  }
+    ssd1306_Init();
+//    ssd1306_FlipScreenVertically();
+    ssd1306_SetRasterInt(1);
+
+
+    /* Infinite loop */
+    for(;;)
+    {
+        HAL_GPIO_TogglePin(DO_R2D_LIGHT_GPIO_Port, DO_R2D_LIGHT_Pin);
+        osDelay(350);
+        HAL_GPIO_TogglePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin);
+        osDelay(241);
+
+    }
   /* USER CODE END 5 */
 }
 
@@ -632,12 +761,21 @@ void taskMain_func(void *argument)
 void taskFaultHandler_func(void *argument)
 {
   /* USER CODE BEGIN taskFaultHandler_func */
-  /* Infinite loop */
-  for(;;)
-  {
-      HAL_GPIO_TogglePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin);
-      osDelay(157);
-  }
+    /* Infinite loop */
+    float fr = 0;
+
+    for(;;)
+    {
+//        HAL_GPIO_TogglePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin);
+//        HAL_GPIO_TogglePin(DO_SC_LIGHT_GPIO_Port,  DO_SC_LIGHT_Pin);
+        osDelay(5);
+
+        fr = fr + 1;
+//        printfDma("%f %f %f \n", fr, fr, fr);
+        printfDma("                           \n");
+//        char *msg = "Test s\n";
+//        HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+    }
   /* USER CODE END taskFaultHandler_func */
 }
 

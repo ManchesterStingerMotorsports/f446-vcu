@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
+#include "fatfs.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -58,6 +59,8 @@ I2C_HandleTypeDef hi2c1;
 DMA_HandleTypeDef hdma_i2c1_tx;
 
 SD_HandleTypeDef hsd;
+DMA_HandleTypeDef hdma_sdio_rx;
+DMA_HandleTypeDef hdma_sdio_tx;
 
 UART_HandleTypeDef huart2;
 DMA_HandleTypeDef hdma_usart2_tx;
@@ -101,9 +104,11 @@ void taskFaultHandler_func(void *argument);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-bool sd_checkCard(void)
+bool isCardDetected = true;
+bool detectCard(void)
 {
-    return HAL_GPIO_ReadPin (SD_CARD_DETECT_GPIO_Port, SD_CARD_DETECT_Pin);
+    return true;
+    //return HAL_GPIO_ReadPin(SD_CARD_DETECT_GPIO_Port, SD_CARD_DETECT_Pin);
 }
 
 
@@ -147,14 +152,8 @@ int main(void)
   MX_I2C1_Init();
   MX_USART2_UART_Init();
   MX_SDIO_SD_Init();
+  MX_FATFS_Init();
   /* USER CODE BEGIN 2 */
-
-  // MUST COMMENT/REMOVE MX_SDIO_SD_Init() ABOVE
-  // Init only if SD Card is present otherwise it will throw error if sd not present
-  if (sd_checkCard())
-  {
-      MX_SDIO_SD_Init();
-  }
 
 
   /* USER CODE END 2 */
@@ -490,14 +489,7 @@ static void MX_SDIO_SD_Init(void)
     hsd.Init.BusWide = SDIO_BUS_WIDE_1B;
     hsd.Init.HardwareFlowControl = SDIO_HARDWARE_FLOW_CONTROL_DISABLE;
     hsd.Init.ClockDiv = 0;
-    if (HAL_SD_Init(&hsd) != HAL_OK)
-    {
-      Error_Handler();
-    }
-    if (HAL_SD_ConfigWideBusOperation(&hsd, SDIO_BUS_WIDE_4B) != HAL_OK)
-    {
-      Error_Handler();
-    }
+
 
 #define ONLY_USER_INIT // Tired of editing the code every time you change, the line "hsd.Init.BusWide = SDIO_BUS_WIDE_4B;"
 #ifndef ONLY_USER_INIT
@@ -510,17 +502,28 @@ static void MX_SDIO_SD_Init(void)
   hsd.Init.BusWide = SDIO_BUS_WIDE_4B;
   hsd.Init.HardwareFlowControl = SDIO_HARDWARE_FLOW_CONTROL_DISABLE;
   hsd.Init.ClockDiv = 0;
-  if (HAL_SD_Init(&hsd) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_SD_ConfigWideBusOperation(&hsd, SDIO_BUS_WIDE_4B) != HAL_OK)
-  {
-    Error_Handler();
-  }
   /* USER CODE BEGIN SDIO_Init 2 */
 
 #endif
+
+  if (detectCard())
+  {
+      if (HAL_SD_Init(&hsd) != HAL_OK)
+      {
+          Error_Handler();
+      }
+      if (HAL_SD_ConfigWideBusOperation(&hsd, SDIO_BUS_WIDE_4B) != HAL_OK)
+      {
+          Error_Handler();
+      }
+  }
+  else
+  {
+      isCardDetected = false;
+      HAL_GPIO_WritePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin, GPIO_PIN_SET);
+  }
+
+  // BSP_SD_IsDetected();
 
   /* USER CODE END SDIO_Init 2 */
 
@@ -567,6 +570,7 @@ static void MX_DMA_Init(void)
 
   /* DMA controller clock enable */
   __HAL_RCC_DMA1_CLK_ENABLE();
+  __HAL_RCC_DMA2_CLK_ENABLE();
 
   /* DMA interrupt init */
   /* DMA1_Stream6_IRQn interrupt configuration */
@@ -575,6 +579,12 @@ static void MX_DMA_Init(void)
   /* DMA1_Stream7_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream7_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream7_IRQn);
+  /* DMA2_Stream3_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream3_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream3_IRQn);
+  /* DMA2_Stream6_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream6_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream6_IRQn);
 
 }
 
@@ -631,7 +641,7 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin : SD_CARD_DETECT_Pin */
   GPIO_InitStruct.Pin = SD_CARD_DETECT_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(SD_CARD_DETECT_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : IT_SC_IN_Pin */
@@ -688,6 +698,7 @@ uint32_t timeDiff = 0;
 uint32_t currTime = 0;
 
 uint16_t w = 0;
+float velocity = 0;
 
 void ssd1306_RasterIntCallback(uint8_t r)
 {
@@ -695,7 +706,19 @@ void ssd1306_RasterIntCallback(uint8_t r)
     timeDiff = currTime - prevTime;
     prevTime = currTime;
 
-    w = (uint16_t)((128 * (currTime % 1000)) / 1000);
+//    w = (uint16_t)((128 * (currTime % 1000)) / 1000);
+
+    // Update velocity based on acceleration
+    velocity += 0.002 * ((float)timeDiff);
+
+    // Update w based on velocity
+    w += (uint16_t)(velocity * ((float)timeDiff));
+
+    // Ensure w stays within bounds
+    if (w > 128) {
+        w = 0;
+        velocity = 0.0f;  // Reset velocity when hitting the boundary
+    }
 
     //timeDiff = currTime - prevTime;
 //    if(r == 0 || r == 1)
@@ -738,7 +761,6 @@ void taskMain_func(void *argument)
 //    ssd1306_FlipScreenVertically();
     ssd1306_SetRasterInt(1);
 
-
     /* Infinite loop */
     for(;;)
     {
@@ -746,7 +768,8 @@ void taskMain_func(void *argument)
         osDelay(350);
         HAL_GPIO_TogglePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin);
         osDelay(241);
-
+        HAL_GPIO_TogglePin(DO_SC_LIGHT_GPIO_Port,  DO_SC_LIGHT_Pin);
+        osDelay(111);
     }
   /* USER CODE END 5 */
 }
@@ -762,17 +785,49 @@ void taskFaultHandler_func(void *argument)
 {
   /* USER CODE BEGIN taskFaultHandler_func */
     /* Infinite loop */
+    if (isCardDetected)
+    {
+        printfDma("Block size   : %lu\n", hsd.SdCard.BlockSize);
+        printfDma("Block nbmr   : %lu\n", hsd.SdCard.BlockNbr);
+        printfDma("Card size    : %lu\n", (hsd.SdCard.BlockSize * hsd.SdCard.BlockNbr) / 1000);
+        printfDma("Card ver     : %lu\n", hsd.SdCard.CardVersion);
+
+        if (f_mount(&SDFatFS, (TCHAR const*) SDPath, 0) != FR_OK)
+        {
+            printfDma("Unable to mount SD Card \n");
+            Error_Handler();
+        }
+
+        FIL fil;
+
+        /* Open a text file (a+ mode)*/
+        if (f_open(&fil, "message.txt", FA_OPEN_APPEND | FA_WRITE | FA_READ) != FR_OK)
+        {
+            printfDma("Unable to create file \n");
+            Error_Handler();
+        }
+
+        // Fails if return negative
+        if (f_printf(&fil, "TEST SD CARD SUCCESS\r\n", 1234) < 0)
+        {
+            Error_Handler();
+        }
+
+        /* Close the file */
+        f_close(&fil);
+    }
+
     float fr = 0;
 
     for(;;)
     {
 //        HAL_GPIO_TogglePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin);
 //        HAL_GPIO_TogglePin(DO_SC_LIGHT_GPIO_Port,  DO_SC_LIGHT_Pin);
-        osDelay(5);
+        osDelay(500);
 
         fr = fr + 1;
-//        printfDma("%f %f %f \n", fr, fr, fr);
-        printfDma("                           \n");
+        printfDma("%f %f %f \n", fr, fr, fr);
+//        printfDma("                           \n");
 //        char *msg = "Test s\n";
 //        HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
     }

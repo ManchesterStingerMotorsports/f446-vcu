@@ -8,7 +8,7 @@
 #ifndef INC_UARTDMA_H_
 #define INC_UARTDMA_H_
 
-#define BUFFER_SIZE 1000
+#define BUFFER_SIZE 2000
 
 int printfDma(const char *format, ...);
 

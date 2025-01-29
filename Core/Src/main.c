@@ -41,8 +41,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define ADC_BUF_LEN 1024
-
+#define ADC_BUF_LEN 1024 * 3
 
 /* USER CODE END PD */
 
@@ -53,9 +52,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
-ADC_HandleTypeDef hadc2;
 DMA_HandleTypeDef hdma_adc1;
-DMA_HandleTypeDef hdma_adc2;
 
 CAN_HandleTypeDef hcan1;
 CAN_HandleTypeDef hcan2;
@@ -93,7 +90,6 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
-static void MX_ADC2_Init(void);
 static void MX_CAN1_Init(void);
 static void MX_CAN2_Init(void);
 static void MX_I2C1_Init(void);
@@ -109,9 +105,10 @@ void taskFaultHandler_func(void *argument);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-
 uint16_t adc1Buff[ADC_BUF_LEN]; // buffer to store values read from adc1
-uint16_t adc2Buff[ADC_BUF_LEN]; // buffer to store values read from adc2
+uint16_t volatile apps1Avg = 0;
+uint16_t volatile apps2Avg = 0;
+uint16_t volatile bpsAvg = 0;
 
 
 bool isCardDetected = true;
@@ -156,7 +153,6 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_ADC1_Init();
-  MX_ADC2_Init();
   MX_CAN1_Init();
   MX_CAN2_Init();
   MX_I2C1_Init();
@@ -293,7 +289,7 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.NbrOfConversion = 2;
+  hadc1.Init.NbrOfConversion = 3;
   hadc1.Init.DMAContinuousRequests = ENABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
@@ -305,7 +301,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_4;
   sConfig.Rank = 1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_480CYCLES;
+  sConfig.SamplingTime = ADC_SAMPLETIME_56CYCLES;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -319,61 +315,18 @@ static void MX_ADC1_Init(void)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN ADC1_Init 2 */
-
-  /* USER CODE END ADC1_Init 2 */
-
-}
-
-/**
-  * @brief ADC2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_ADC2_Init(void)
-{
-
-  /* USER CODE BEGIN ADC2_Init 0 */
-
-  /* USER CODE END ADC2_Init 0 */
-
-  ADC_ChannelConfTypeDef sConfig = {0};
-
-  /* USER CODE BEGIN ADC2_Init 1 */
-
-  /* USER CODE END ADC2_Init 1 */
-
-  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
-  */
-  hadc2.Instance = ADC2;
-  hadc2.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV8;
-  hadc2.Init.Resolution = ADC_RESOLUTION_12B;
-  hadc2.Init.ScanConvMode = DISABLE;
-  hadc2.Init.ContinuousConvMode = ENABLE;
-  hadc2.Init.DiscontinuousConvMode = DISABLE;
-  hadc2.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-  hadc2.Init.ExternalTrigConv = ADC_SOFTWARE_START;
-  hadc2.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc2.Init.NbrOfConversion = 1;
-  hadc2.Init.DMAContinuousRequests = ENABLE;
-  hadc2.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
-  if (HAL_ADC_Init(&hadc2) != HAL_OK)
-  {
-    Error_Handler();
-  }
 
   /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
   */
   sConfig.Channel = ADC_CHANNEL_6;
-  sConfig.Rank = 1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_480CYCLES;
-  if (HAL_ADC_ConfigChannel(&hadc2, &sConfig) != HAL_OK)
+  sConfig.Rank = 3;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN ADC2_Init 2 */
+  /* USER CODE BEGIN ADC1_Init 2 */
 
-  /* USER CODE END ADC2_Init 2 */
+  /* USER CODE END ADC1_Init 2 */
 
 }
 
@@ -601,9 +554,6 @@ static void MX_DMA_Init(void)
   /* DMA2_Stream0_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
-  /* DMA2_Stream2_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 5, 0);
-  HAL_NVIC_EnableIRQ(DMA2_Stream2_IRQn);
   /* DMA2_Stream3_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream3_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream3_IRQn);
@@ -722,47 +672,18 @@ uint32_t prevTime = 0;
 uint32_t timeDiff = 0;
 uint32_t currTime = 0;
 
-uint16_t w = 0;
-float velocity = 0;
-
 void ssd1306_RasterIntCallback(uint8_t r)
 {
     currTime = HAL_GetTick();
     timeDiff = currTime - prevTime;
     prevTime = currTime;
 
-//    w = (uint16_t)((128 * (currTime % 1000)) / 1000);
-
-    // Update velocity based on acceleration
-    velocity += 0.002 * ((float)timeDiff);
-
-    // Update w based on velocity
-    w += (uint16_t)(velocity * ((float)timeDiff));
-
-    // Ensure w stays within bounds
-    if (w > 128) {
-        w = 0;
-        velocity = 0.0f;  // Reset velocity when hitting the boundary
-    }
-
-    //timeDiff = currTime - prevTime;
-//    if(r == 0 || r == 1)
-//    {
-//        ssd1306_SetColor(Black);
-//        ssd1306_Fill();
-//    }
-//    else if(r == 2 || r == 3)
-//    {
-//        ssd1306_SetColor(White);
-//        ssd1306_Fill();
-//    }
-
     ssd1306_SetColor(Black);
     ssd1306_Fill();
 
     ssd1306_SetColor(White);
-    ssd1306_DrawRect(0, 0, w, 8);
-    ssd1306_DrawRect(0, 22, w, 8);
+    ssd1306_DrawRect(0,  0, apps1Avg * 128 / 4095, 8);
+    ssd1306_DrawRect(0, 22, apps2Avg * 128 / 4095, 8);
 
     char msg[32];
     snprintf(msg, 64, "FPS: %.0lf (%ld ms)", 1 / ((float)timeDiff/1000.0), timeDiff);
@@ -774,26 +695,44 @@ void ssd1306_RasterIntCallback(uint8_t r)
 // Called when first half of buffer is filled
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
 {
+    uint32_t sum1 = 0;
+    uint32_t sum2 = 0;
+    uint32_t sum3 = 0;
+
+    // Calculate the average of the first half of the buffer
     if (hadc == &hadc1)
     {
-
-    }
-    else if (hadc == &hadc2)
-    {
-
+        for (int i = 0; i < ADC_BUF_LEN/2; i += 3)
+        {
+            sum1 += adc1Buff[i];
+            sum2 += adc1Buff[i+1];
+            sum3 += adc1Buff[i+2];
+        }
+        bpsAvg   = sum1 / (ADC_BUF_LEN/6);
+        apps1Avg = sum2 / (ADC_BUF_LEN/6);
+        apps2Avg = sum3 / (ADC_BUF_LEN/6);
     }
 }
 
 // Called when buffer is completely filled
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
+    uint32_t sum1 = 0;
+    uint32_t sum2 = 0;
+    uint32_t sum3 = 0;
+
+    // Calculate the average of the second half of the buffer
     if (hadc == &hadc1)
     {
-
-    }
-    else if (hadc == &hadc2)
-    {
-
+        for (int i = ADC_BUF_LEN/2; i < ADC_BUF_LEN; i += 3)
+        {
+            sum1 += adc1Buff[i];
+            sum2 += adc1Buff[i+1];
+            sum3 += adc1Buff[i+2];
+        }
+        bpsAvg   = sum1 / (ADC_BUF_LEN/6);
+        apps1Avg = sum2 / (ADC_BUF_LEN/6);
+        apps2Avg = sum3 / (ADC_BUF_LEN/6);
     }
 }
 
@@ -816,7 +755,6 @@ void taskMain_func(void *argument)
 
     // Start ADC Conversion
     HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc1Buff, ADC_BUF_LEN);
-    HAL_ADC_Start_DMA(&hadc2, (uint32_t*)adc2Buff, ADC_BUF_LEN);
 
     /* Infinite loop */
     for(;;)

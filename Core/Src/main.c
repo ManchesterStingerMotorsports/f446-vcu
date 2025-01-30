@@ -41,7 +41,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define ADC_BUF_LEN 1024 * 3
+#define ADC_BUF_LEN (1024 * 3)
 
 /* USER CODE END PD */
 
@@ -116,6 +116,39 @@ bool detectCard(void)
 {
     return true;
     //return HAL_GPIO_ReadPin(SD_CARD_DETECT_GPIO_Port, SD_CARD_DETECT_Pin);
+}
+
+void CAN_setup(CAN_HandleTypeDef *hcan)
+{
+    // This filter allows for all message to pass
+    // Rx FIFO0 is used
+    CAN_FilterTypeDef sf;
+    sf.FilterIdHigh = 0x0000;
+    sf.FilterIdLow = 0x0000;
+    sf.FilterMaskIdHigh = 0x0000;
+    sf.FilterMaskIdLow = 0x0000;
+    sf.FilterFIFOAssignment = CAN_FILTER_FIFO0;
+    sf.FilterBank = 0;
+    sf.FilterMode = CAN_FILTERMODE_IDMASK;
+    sf.FilterScale = CAN_FILTERSCALE_32BIT;
+    sf.FilterActivation = CAN_FILTER_ENABLE;
+
+    if (HAL_CAN_ConfigFilter(hcan, &sf) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+    if (HAL_CAN_Start(hcan) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+    // Enable Interrupt callback when a CAN message is recieved
+    if (HAL_CAN_ActivateNotification(hcan, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
 }
 
 
@@ -346,15 +379,15 @@ static void MX_CAN1_Init(void)
 
   /* USER CODE END CAN1_Init 1 */
   hcan1.Instance = CAN1;
-  hcan1.Init.Prescaler = 16;
+  hcan1.Init.Prescaler = 6;
   hcan1.Init.Mode = CAN_MODE_NORMAL;
   hcan1.Init.SyncJumpWidth = CAN_SJW_1TQ;
-  hcan1.Init.TimeSeg1 = CAN_BS1_1TQ;
-  hcan1.Init.TimeSeg2 = CAN_BS2_1TQ;
+  hcan1.Init.TimeSeg1 = CAN_BS1_11TQ;
+  hcan1.Init.TimeSeg2 = CAN_BS2_2TQ;
   hcan1.Init.TimeTriggeredMode = DISABLE;
-  hcan1.Init.AutoBusOff = DISABLE;
-  hcan1.Init.AutoWakeUp = DISABLE;
-  hcan1.Init.AutoRetransmission = DISABLE;
+  hcan1.Init.AutoBusOff = ENABLE;
+  hcan1.Init.AutoWakeUp = ENABLE;
+  hcan1.Init.AutoRetransmission = ENABLE;
   hcan1.Init.ReceiveFifoLocked = DISABLE;
   hcan1.Init.TransmitFifoPriority = DISABLE;
   if (HAL_CAN_Init(&hcan1) != HAL_OK)
@@ -383,15 +416,15 @@ static void MX_CAN2_Init(void)
 
   /* USER CODE END CAN2_Init 1 */
   hcan2.Instance = CAN2;
-  hcan2.Init.Prescaler = 16;
+  hcan2.Init.Prescaler = 6;
   hcan2.Init.Mode = CAN_MODE_NORMAL;
   hcan2.Init.SyncJumpWidth = CAN_SJW_1TQ;
-  hcan2.Init.TimeSeg1 = CAN_BS1_1TQ;
-  hcan2.Init.TimeSeg2 = CAN_BS2_1TQ;
+  hcan2.Init.TimeSeg1 = CAN_BS1_11TQ;
+  hcan2.Init.TimeSeg2 = CAN_BS2_2TQ;
   hcan2.Init.TimeTriggeredMode = DISABLE;
-  hcan2.Init.AutoBusOff = DISABLE;
-  hcan2.Init.AutoWakeUp = DISABLE;
-  hcan2.Init.AutoRetransmission = DISABLE;
+  hcan2.Init.AutoBusOff = ENABLE;
+  hcan2.Init.AutoWakeUp = ENABLE;
+  hcan2.Init.AutoRetransmission = ENABLE;
   hcan2.Init.ReceiveFifoLocked = DISABLE;
   hcan2.Init.TransmitFifoPriority = DISABLE;
   if (HAL_CAN_Init(&hcan2) != HAL_OK)
@@ -737,6 +770,44 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 }
 
 
+void CAN_uartHexDump(CAN_RxHeaderTypeDef *rxHeader, uint8_t rxData[static 8])
+{
+    char txBuff[128];
+    char *cursor = txBuff;
+
+    // Format ID section
+    cursor += sprintf(cursor, "ID: 0x%03X, DATA:", (uint16_t)rxHeader->StdId);
+
+    // Format data bytes with spaces between them
+    for (int i = 0; i < rxHeader->DLC; i++)
+    {
+        cursor += sprintf(cursor, " %02X", rxData[i]);
+    }
+
+    // Add newline and calculate total length
+    cursor += sprintf(cursor, "\n");
+
+    // Send formatted message
+    printfDma("%s", txBuff);
+}
+
+
+// ISR Callback to process recieved can messages:
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
+{
+    CAN_RxHeaderTypeDef rxHeader;
+    uint8_t rxData[8];
+
+    // Get CAN Message
+    HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &rxHeader, rxData);
+
+    // Process recieved can messages here <---------------------------------------------------
+    // Parse incoming message bla2
+
+    CAN_uartHexDump(&rxHeader, rxData); // CAUTION: CAUSES ERROR SINCE MUTEX ACQ CANNOT BE CALLED FROM ISR
+}
+
+
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_taskMain_func */
@@ -756,6 +827,10 @@ void taskMain_func(void *argument)
     // Start ADC Conversion
     HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc1Buff, ADC_BUF_LEN);
 
+    // Start CAN
+    CAN_setup(&hcan1);
+    CAN_setup(&hcan2);
+
     /* Infinite loop */
     for(;;)
     {
@@ -765,6 +840,26 @@ void taskMain_func(void *argument)
         osDelay(241);
         HAL_GPIO_TogglePin(DO_SC_LIGHT_GPIO_Port,  DO_SC_LIGHT_Pin);
         osDelay(111);
+
+
+        CAN_TxHeaderTypeDef txHeader;
+
+        txHeader.StdId = 69;            // ID - Lower ID - higher priority
+        txHeader.IDE = CAN_ID_STD;      // Extended 2.0B or Standard 2.0A
+        txHeader.RTR = CAN_RTR_DATA;    // Remote or Data Frame
+        txHeader.DLC = 8;               // Data Length Code (8 MAX)
+
+        uint32_t mb;                // Stores which Tx Mailbox is used
+        uint8_t data[8] = {0xEF, 0xBE, 0xAD, 0xDE, 0xEF, 0xBE, 0xAD, 0xDE};
+
+        if (HAL_CAN_GetTxMailboxesFreeLevel(&hcan1))
+        {
+            if (HAL_CAN_AddTxMessage(&hcan1, &txHeader, data, &mb) != HAL_OK)
+            {
+                // CAN peripheral tx error
+                Error_Handler();
+            }
+        }
     }
   /* USER CODE END 5 */
 }
@@ -780,37 +875,37 @@ void taskFaultHandler_func(void *argument)
 {
   /* USER CODE BEGIN taskFaultHandler_func */
     /* Infinite loop */
-    if (isCardDetected)
-    {
-        printfDma("Block size   : %lu\n", hsd.SdCard.BlockSize);
-        printfDma("Block nbmr   : %lu\n", hsd.SdCard.BlockNbr);
-        printfDma("Card size    : %lu\n", (hsd.SdCard.BlockSize * hsd.SdCard.BlockNbr) / 1000);
-        printfDma("Card ver     : %lu\n", hsd.SdCard.CardVersion);
-
-        if (f_mount(&SDFatFS, (TCHAR const*) SDPath, 0) != FR_OK)
-        {
-            printfDma("Unable to mount SD Card \n");
-            Error_Handler();
-        }
-
-        FIL fil;
-
-        /* Open a text file (a+ mode)*/
-        if (f_open(&fil, "message.txt", FA_OPEN_APPEND | FA_WRITE | FA_READ) != FR_OK)
-        {
-            printfDma("Unable to create file \n");
-            Error_Handler();
-        }
-
-        // Fails if return negative
-        if (f_printf(&fil, "TEST SD CARD SUCCESS\r\n", 1234) < 0)
-        {
-            Error_Handler();
-        }
-
-        /* Close the file */
-        f_close(&fil);
-    }
+//    if (isCardDetected)
+//    {
+//        printfDma("Block size   : %lu\n", hsd.SdCard.BlockSize);
+//        printfDma("Block nbmr   : %lu\n", hsd.SdCard.BlockNbr);
+//        printfDma("Card size    : %lu\n", (hsd.SdCard.BlockSize * hsd.SdCard.BlockNbr) / 1000);
+//        printfDma("Card ver     : %lu\n", hsd.SdCard.CardVersion);
+//
+//        if (f_mount(&SDFatFS, (TCHAR const*) SDPath, 0) != FR_OK)
+//        {
+//            printfDma("Unable to mount SD Card \n");
+//            Error_Handler();
+//        }
+//
+//        FIL fil;
+//
+//        /* Open a text file (a+ mode)*/
+//        if (f_open(&fil, "message.txt", FA_OPEN_APPEND | FA_WRITE | FA_READ) != FR_OK)
+//        {
+//            printfDma("Unable to create file \n");
+//            Error_Handler();
+//        }
+//
+//        // Fails if return negative
+//        if (f_printf(&fil, "TEST SD CARD SUCCESS\r\n", 1234) < 0)
+//        {
+//            Error_Handler();
+//        }
+//
+//        /* Close the file */
+//        f_close(&fil);
+//    }
 
     float fr = 0;
 
@@ -821,7 +916,7 @@ void taskFaultHandler_func(void *argument)
         osDelay(500);
 
         fr = fr + 1;
-        printfDma("%f %f %f \n", fr, fr, fr);
+//        printfDma("%f %f %f \n", fr, fr, fr);
 //        printfDma("                           \n");
 //        char *msg = "Test s\n";
 //        HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);

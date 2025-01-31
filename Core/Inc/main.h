@@ -32,12 +32,16 @@ extern "C" {
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+#include "cmsis_os.h"
+
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
 
 extern UART_HandleTypeDef huart2;
+extern osMessageQueueId_t q_printfHandle;
+extern osThreadId_t t_uartHandle;
 
 /* USER CODE END ET */
 

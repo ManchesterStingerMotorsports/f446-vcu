@@ -8,7 +8,16 @@
 #ifndef INC_UARTDMA_H_
 #define INC_UARTDMA_H_
 
-#define BUFFER_SIZE 2000
+#define BUFF_SIZE 128
+
+
+typedef struct
+{
+    char str[128];
+    int len;
+} printfString_t;
+
+
 
 int printfDma(const char *format, ...);
 

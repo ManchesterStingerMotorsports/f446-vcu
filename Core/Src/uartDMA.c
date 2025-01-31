@@ -6,125 +6,96 @@
  */
 
 #include "uartDMA.h"
+
 #include "stdio.h"
 #include "stdarg.h"
 #include "stdbool.h"
+
 #include "main.h"
+//#include "cmsis_os.h"
+
 
 #define uartHandle huart2
 
-char buffer[BUFFER_SIZE] = {0};
-int head = 0;
-int tail = 0;
-
-bool isFull = false;
-bool isWrapped = false;
-
-int tailDma = 0;
+#define FLAG_UART_INACTIVE 0x0001
+#define FLAG_TASK_ACTIVE   0x0002
 
 
-
-int getDataLen(void)
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
-    if (head >= tail)
-    {
-        return head - tail; // Data is in a single contiguous block
-    }
-    else
-    {
-        return BUFFER_SIZE - tail + head; // Data wraps around the buffer
-    }
+    osThreadFlagsSet(t_uartHandle, 0x0001U);
 }
 
 
-void startUartDmaTx(void)
-{
-    // Get the data len up to the buffer size only
-    int dataLen = isWrapped ? BUFFER_SIZE - tail : head - tail;
-
-    // get pointer to the tail data
-    uint8_t* dataPtr = (uint8_t*)(buffer + tail);
-
-    tailDma = tail + dataLen;
-
-    HAL_UART_Transmit_DMA(&uartHandle, dataPtr, dataLen);
-}
-
-
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef * huart)
-{
-    if (huart == &uartHandle)
-    {
-        tail = tailDma;
-        if (tail == BUFFER_SIZE)
-        {
-            tail = 0;
-            isWrapped = false;
-        }
-        if (head > tail)
-        {
-            startUartDmaTx();
-        }
-    }
-}
-
-
-// Function to append formatted data to the ring buffer
 int printfDma(const char *format, ...)
 {
-    const int TEMP_BUFF_SIZE = 256;
+    // Check if queue is full
+    if (!osMessageQueueGetSpace(q_printfHandle))
+    {
+        Error_Handler();
+    }
 
-    char temp_buffer[TEMP_BUFF_SIZE];
+    printfString_t prtStr;
+
     va_list args;
     va_start(args, format);
-    int written = vsnprintf(temp_buffer, TEMP_BUFF_SIZE, format, args);
+    prtStr.len = vsnprintf(prtStr.str, BUFF_SIZE, format, args);
     va_end(args);
 
-    if (written < 0)
+    if (prtStr.len < 0) // Error in formatting
     {
-        return -1; // Error in formatting
+        return -1;
     }
-    else if (written > TEMP_BUFF_SIZE)
+    else if (prtStr.len > BUFF_SIZE) // Over limit of buffer size
     {
-        // Over limit of temp buffer
-        Error_Handler();
-    }
-    else if (getDataLen() + written > BUFFER_SIZE)
-    {
-        // Buffer full
         Error_Handler();
     }
 
-    for (int i = 0; i < written; i++)
+    // Add buffer to queue
+    if (osMessageQueuePut(q_printfHandle, &prtStr, 0, 0) != osOK)
     {
-        buffer[head++] = temp_buffer[i];
-
-        if (head == BUFFER_SIZE)
-        {
-            isWrapped = true;
-            head = 0;
-        }
-
-//        // Overflow handling (overwrite oldest data)
-//        if (is_full)
-//        {
-//            tail = (tail + 1) % BUFFER_SIZE;
-//        }
-
-        if (head == tail)
-        {
-            Error_Handler();
-        }
+        Error_Handler();
     }
 
-    if (HAL_UART_GetState(&uartHandle) == HAL_UART_STATE_READY)
-    {
-        startUartDmaTx();
-    }
+    osThreadFlagsSet(t_uartHandle, FLAG_TASK_ACTIVE);
 
-    return written;
+    return prtStr.len;
 }
 
+
+void t_uart_func(void *argument)
+{
+    printfString_t prtStr;
+
+    for(;;)
+    {
+        osThreadFlagsWait(FLAG_TASK_ACTIVE, osFlagsWaitAny, osWaitForever);
+
+        while (osMessageQueueGetCount(q_printfHandle))
+        {
+            if (osMessageQueueGet(q_printfHandle, &prtStr, NULL, 0) == osOK)
+            {
+                if (HAL_UART_Transmit_DMA(&uartHandle, (uint8_t*)prtStr.str, prtStr.len) != HAL_OK)
+                {
+                    // UART tx error
+                    Error_Handler();
+                }
+            }
+            else
+            {
+                // Queue Empty
+                Error_Handler();
+            }
+
+            // Wait until UART tx is done
+            osThreadFlagsWait(FLAG_UART_INACTIVE, osFlagsWaitAny, osWaitForever);
+        }
+
+        // Clear the flag if it was set during uart transmission,
+        // so it can detect new printf requests
+        osThreadFlagsClear(FLAG_TASK_ACTIVE);
+    }
+}
 
 
 

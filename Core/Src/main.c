@@ -67,19 +67,31 @@ DMA_HandleTypeDef hdma_sdio_tx;
 UART_HandleTypeDef huart2;
 DMA_HandleTypeDef hdma_usart2_tx;
 
-/* Definitions for taskMain */
-osThreadId_t taskMainHandle;
-const osThreadAttr_t taskMain_attributes = {
-  .name = "taskMain",
+/* Definitions for t_main */
+osThreadId_t t_mainHandle;
+const osThreadAttr_t t_main_attributes = {
+  .name = "t_main",
   .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
-/* Definitions for taskFaultHandler */
-osThreadId_t taskFaultHandlerHandle;
-const osThreadAttr_t taskFaultHandler_attributes = {
-  .name = "taskFaultHandler",
+/* Definitions for t_faultHandler */
+osThreadId_t t_faultHandlerHandle;
+const osThreadAttr_t t_faultHandler_attributes = {
+  .name = "t_faultHandler",
   .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityLow,
+};
+/* Definitions for t_uart */
+osThreadId_t t_uartHandle;
+const osThreadAttr_t t_uart_attributes = {
+  .name = "t_uart",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
+/* Definitions for q_printf */
+osMessageQueueId_t q_printfHandle;
+const osMessageQueueAttr_t q_printf_attributes = {
+  .name = "q_printf"
 };
 /* USER CODE BEGIN PV */
 
@@ -95,8 +107,9 @@ static void MX_CAN2_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_SDIO_SD_Init(void);
-void taskMain_func(void *argument);
-void taskFaultHandler_func(void *argument);
+void t_main_func(void *argument);
+void t_faultHandler_func(void *argument);
+extern void t_uart_func(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -212,16 +225,23 @@ int main(void)
   /* start timers, add new ones, ... */
   /* USER CODE END RTOS_TIMERS */
 
+  /* Create the queue(s) */
+  /* creation of q_printf */
+  q_printfHandle = osMessageQueueNew (16, sizeof(printfString_t), &q_printf_attributes);
+
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* creation of taskMain */
-  taskMainHandle = osThreadNew(taskMain_func, NULL, &taskMain_attributes);
+  /* creation of t_main */
+  t_mainHandle = osThreadNew(t_main_func, NULL, &t_main_attributes);
 
-  /* creation of taskFaultHandler */
-  taskFaultHandlerHandle = osThreadNew(taskFaultHandler_func, NULL, &taskFaultHandler_attributes);
+  /* creation of t_faultHandler */
+  t_faultHandlerHandle = osThreadNew(t_faultHandler_func, NULL, &t_faultHandler_attributes);
+
+  /* creation of t_uart */
+  t_uartHandle = osThreadNew(t_uart_func, NULL, &t_uart_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -810,14 +830,14 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 
 /* USER CODE END 4 */
 
-/* USER CODE BEGIN Header_taskMain_func */
+/* USER CODE BEGIN Header_t_main_func */
 /**
-  * @brief  Function implementing the taskMain thread.
+  * @brief  Function implementing the t_main thread.
   * @param  argument: Not used
   * @retval None
   */
-/* USER CODE END Header_taskMain_func */
-void taskMain_func(void *argument)
+/* USER CODE END Header_t_main_func */
+void t_main_func(void *argument)
 {
   /* USER CODE BEGIN 5 */
     ssd1306_Init();
@@ -864,64 +884,22 @@ void taskMain_func(void *argument)
   /* USER CODE END 5 */
 }
 
-/* USER CODE BEGIN Header_taskFaultHandler_func */
+/* USER CODE BEGIN Header_t_faultHandler_func */
 /**
-* @brief Function implementing the taskFaultHandler thread.
+* @brief Function implementing the t_faultHandler thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_taskFaultHandler_func */
-void taskFaultHandler_func(void *argument)
+/* USER CODE END Header_t_faultHandler_func */
+void t_faultHandler_func(void *argument)
 {
-  /* USER CODE BEGIN taskFaultHandler_func */
-    /* Infinite loop */
-//    if (isCardDetected)
-//    {
-//        printfDma("Block size   : %lu\n", hsd.SdCard.BlockSize);
-//        printfDma("Block nbmr   : %lu\n", hsd.SdCard.BlockNbr);
-//        printfDma("Card size    : %lu\n", (hsd.SdCard.BlockSize * hsd.SdCard.BlockNbr) / 1000);
-//        printfDma("Card ver     : %lu\n", hsd.SdCard.CardVersion);
-//
-//        if (f_mount(&SDFatFS, (TCHAR const*) SDPath, 0) != FR_OK)
-//        {
-//            printfDma("Unable to mount SD Card \n");
-//            Error_Handler();
-//        }
-//
-//        FIL fil;
-//
-//        /* Open a text file (a+ mode)*/
-//        if (f_open(&fil, "message.txt", FA_OPEN_APPEND | FA_WRITE | FA_READ) != FR_OK)
-//        {
-//            printfDma("Unable to create file \n");
-//            Error_Handler();
-//        }
-//
-//        // Fails if return negative
-//        if (f_printf(&fil, "TEST SD CARD SUCCESS\r\n", 1234) < 0)
-//        {
-//            Error_Handler();
-//        }
-//
-//        /* Close the file */
-//        f_close(&fil);
-//    }
-
-    float fr = 0;
-
-    for(;;)
-    {
-//        HAL_GPIO_TogglePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin);
-//        HAL_GPIO_TogglePin(DO_SC_LIGHT_GPIO_Port,  DO_SC_LIGHT_Pin);
-        osDelay(500);
-
-        fr = fr + 1;
-//        printfDma("%f %f %f \n", fr, fr, fr);
-//        printfDma("                           \n");
-//        char *msg = "Test s\n";
-//        HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
-    }
-  /* USER CODE END taskFaultHandler_func */
+  /* USER CODE BEGIN t_faultHandler_func */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END t_faultHandler_func */
 }
 
 /**

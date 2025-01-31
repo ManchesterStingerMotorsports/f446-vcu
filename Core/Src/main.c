@@ -894,11 +894,67 @@ void t_main_func(void *argument)
 void t_faultHandler_func(void *argument)
 {
   /* USER CODE BEGIN t_faultHandler_func */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+
+    uint8_t buff[32];
+
+    if (isCardDetected)
+    {
+        printfDma("Block size   : %lu\n", hsd.SdCard.BlockSize);
+        printfDma("Block nbmr   : %lu\n", hsd.SdCard.BlockNbr);
+        printfDma("Card size    : %lu\n", (hsd.SdCard.BlockSize * hsd.SdCard.BlockNbr) / 1000);
+        printfDma("Card ver     : %lu\n", hsd.SdCard.CardVersion);
+
+        if (f_mount(&SDFatFS, (TCHAR const*) SDPath, 0) != FR_OK)
+        {
+            printfDma("Unable to mount SD Card \n");
+            Error_Handler();
+        }
+
+        FIL fil;
+        UINT bytesRead;
+
+        /* Open a text file (w+ mode)*/
+        if (f_open(&fil, "message.txt", FA_WRITE | FA_READ) != FR_OK)
+        {
+            Error_Handler(); // Error accessing file
+        }
+
+        if (f_read(&fil, buff, 32, &bytesRead))
+        {
+            Error_Handler();
+        }
+
+        int val = atoi((char *)buff);
+        f_rewind(&fil);
+
+        // Fails if return negative
+        if (f_printf(&fil, "%d \n\nSD CARD TEST SUCCESS \n", ++val) < 0)
+        {
+            Error_Handler();
+        }
+
+        printfDma("Runtime Cycle: %d \n", val);
+
+        /* Close the file */
+        f_close(&fil);
+    }
+
+    float fr = 0;
+
+    for(;;)
+    {
+//        HAL_GPIO_TogglePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin);
+//        HAL_GPIO_TogglePin(DO_SC_LIGHT_GPIO_Port,  DO_SC_LIGHT_Pin);
+        osDelay(500);
+
+        fr = fr + 1;
+//        printfDma("%f %f %f \n", fr, fr, fr);
+//        printfDma("                           \n");
+//        char *msg = "Test s\n";
+//        HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+    }
+
+
   /* USER CODE END t_faultHandler_func */
 }
 

@@ -131,6 +131,21 @@ bool detectCard(void)
     //return HAL_GPIO_ReadPin(SD_CARD_DETECT_GPIO_Port, SD_CARD_DETECT_Pin);
 }
 
+uint8_t BSP_SD_IsDetected(void)
+{
+  __IO uint8_t status = SD_PRESENT;
+
+  if(HAL_GPIO_ReadPin(SD_DETECT_GPIO_PORT, SD_DETECT_PIN) != GPIO_PIN_SET)
+  {
+      status = SD_NOT_PRESENT;
+  }
+
+  return status;
+}
+
+
+
+
 void CAN_setup(CAN_HandleTypeDef *hcan)
 {
     // This filter allows for all message to pass
@@ -161,7 +176,6 @@ void CAN_setup(CAN_HandleTypeDef *hcan)
     {
         Error_Handler();
     }
-
 }
 
 
@@ -548,8 +562,6 @@ static void MX_SDIO_SD_Init(void)
       HAL_GPIO_WritePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin, GPIO_PIN_SET);
   }
 
-  // BSP_SD_IsDetected();
-
   /* USER CODE END SDIO_Init 2 */
 
 }
@@ -872,9 +884,9 @@ void t_main_func(void *argument)
         uint32_t mb;                // Stores which Tx Mailbox is used
         uint8_t data[8] = {0xEF, 0xBE, 0xAD, 0xDE, 0xEF, 0xBE, 0xAD, 0xDE};
 
-        if (HAL_CAN_GetTxMailboxesFreeLevel(&hcan1))
+        if (HAL_CAN_GetTxMailboxesFreeLevel(&hcan2))
         {
-            if (HAL_CAN_AddTxMessage(&hcan1, &txHeader, data, &mb) != HAL_OK)
+            if (HAL_CAN_AddTxMessage(&hcan2, &txHeader, data, &mb) != HAL_OK)
             {
                 // CAN peripheral tx error
                 Error_Handler();

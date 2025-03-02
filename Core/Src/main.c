@@ -717,7 +717,7 @@ void ssd1306_RasterIntCallback(uint8_t r)
 
     char msg[32];
 //    snprintf(msg, 64, "FPS: %.0lf (%ld ms)", 1 / ((float)timeDiff/1000.0), timeDiff);
-    snprintf(msg, 64, "ERPM: %ld", invrtr.erpm);
+    snprintf(msg, 64, "RPM:%ld V:%d %ld", invrtr.erpm, invrtr.inputVoltage, timeDiff);
     ssd1306_SetCursor(2, 11);
     ssd1306_WriteString(msg, Font_7x10);
 }
@@ -888,6 +888,11 @@ void t_faultHandler_func(void *argument)
         osDelay(500);
 
         fr = fr + 1;
+
+        inverter_setERPM((uint32_t) fr);
+        inverter_setDriveEnable(1);
+
+
 //        printfDma("%f %f %f \n", fr, fr, fr);
 //        printfDma("                           \n");
 //        char *msg = "Test s\n";

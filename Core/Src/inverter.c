@@ -11,7 +11,7 @@ InverterData invrtr;
 
 // SCALE = 10 except for ERPM and DriveEnable which is 1 #######################
 #define USE_EXT_ID                   true
-#define INVERTER_NODE_ID             0x22  // Example Node ID from CAN Manual
+#define INVERTER_NODE_ID             20     // Example Node ID from CAN DB File
 #define CMD_SET_AC_CURRENT           0x01  // Set AC Current
 #define CMD_SET_BRAKE_CURRENT        0x02  // Set Brake Current
 #define CMD_SET_ERPM                 0x03  // Set ERPM
@@ -120,7 +120,7 @@ HAL_StatusTypeDef CAN_SendCommand(uint32_t cmdID, uint8_t* data, uint8_t dlc)
 /* Command: Set AC Current (0x01)
    As per Table 11 in the manual, the first 2 bytes contain the target AC current
    (in Apk, scaled by 10) in Big Endian order. */
-void sendSetACCurrent(int16_t acCurrent)
+void inverter_setACCurrent(int16_t acCurrent)
 {
   uint8_t payload[2];
   payload[0] = (uint8_t)((uint16_t)acCurrent >> 8);
@@ -131,7 +131,7 @@ void sendSetACCurrent(int16_t acCurrent)
   }
 }
 
-void sendSetBrakeCurrent(int16_t brkCurrent)
+void inverter_setBrakeCurrent(int16_t brkCurrent)
 {
 	uint8_t payload[2];
 	payload[0] = (uint8_t)((uint16_t)brkCurrent >> 8);
@@ -144,7 +144,7 @@ void sendSetBrakeCurrent(int16_t brkCurrent)
 
 /* Command: Set ERPM (0x03)
    According to Table 13, a 4-byte signed value (Big Endian) is sent. */
-void sendSetERPM(int32_t erpm)
+void inverter_setERPM(int32_t erpm)
 {
   uint8_t payload[4];
   payload[0] = (uint8_t)((uint32_t)erpm >> 24);
@@ -160,7 +160,7 @@ void sendSetERPM(int32_t erpm)
 
 // Command: Set Position (0x04)
 // Payload: 2 bytes, target position (in degrees multiplied by 10)
-void sendSetPosition(int16_t position)
+void inverter_setPosition(int16_t position)
 {
     uint8_t payload[2];
     payload[0] = (uint8_t)((uint16_t)position >> 8);
@@ -173,7 +173,7 @@ void sendSetPosition(int16_t position)
 
 // Command: Set Relative Current (0x05)
 // Payload: 2 bytes, target relative current percentage (multiplied by 10)
-void sendSetRelativeCurrent(int16_t relativeCurrent)
+void inverter_setRelativeCurrent(int16_t relativeCurrent)
 {
     uint8_t payload[2];
     payload[0] = (uint8_t)((uint16_t)relativeCurrent >> 8);
@@ -186,7 +186,7 @@ void sendSetRelativeCurrent(int16_t relativeCurrent)
 
 // Command: Set Relative Brake Current (0x06)
 // Payload: 2 bytes, target relative brake current percentage (multiplied by 10)
-void sendSetRelativeBrakeCurrent(int16_t relativeBrakeCurrent)
+void inverter_setRelativeBrakeCurrent(int16_t relativeBrakeCurrent)
 {
     uint8_t payload[2];
     payload[0] = (uint8_t)((uint16_t)relativeBrakeCurrent >> 8);
@@ -200,7 +200,7 @@ void sendSetRelativeBrakeCurrent(int16_t relativeBrakeCurrent)
 // Command: Set Digital Output (0x07)
 // Payload: 8 bytes. Only the first byte is used to set digital outputs;
 // the remaining bytes are filled with 0xFF (as "not used").
-void sendSetDigitalOutput(uint8_t digitalOut)
+void inverter_setDigitalOutput(uint8_t digitalOut)
 {
     uint8_t payload[8];
     payload[0] = digitalOut;  // Lower 4 bits could represent outputs 1 to 4.
@@ -215,7 +215,7 @@ void sendSetDigitalOutput(uint8_t digitalOut)
 
 // Command: Set Maximum AC Current (0x08)
 // Payload: 2 bytes, maximum AC current (multiplied by 10)
-void sendSetMaxACCurrent(int16_t maxACCurrent)
+void inverter_setMaxACCurrent(int16_t maxACCurrent)
 {
     uint8_t payload[2];
     payload[0] = (uint8_t)((uint16_t)maxACCurrent >> 8);
@@ -228,7 +228,7 @@ void sendSetMaxACCurrent(int16_t maxACCurrent)
 
 // Command: Set Maximum AC Brake Current (0x09)
 // Payload: 2 bytes, maximum AC brake current (multiplied by 10; negative value expected)
-void sendSetMaxBrakeACCurrent(int16_t maxBrakeACCurrent)
+void inverter_setMaxBrakeACCurrent(int16_t maxBrakeACCurrent)
 {
     uint8_t payload[2];
     payload[0] = (uint8_t)((uint16_t)maxBrakeACCurrent >> 8);
@@ -241,7 +241,7 @@ void sendSetMaxBrakeACCurrent(int16_t maxBrakeACCurrent)
 
 // Command: Set Maximum DC Current (0x0A)
 // Payload: 2 bytes, maximum DC current limit (multiplied by 10)
-void sendSetMaxDCCurrent(int16_t maxDCCurrent)
+void inverter_setMaxDCCurrent(int16_t maxDCCurrent)
 {
     uint8_t payload[2];
     payload[0] = (uint8_t)((uint16_t)maxDCCurrent >> 8);
@@ -254,7 +254,7 @@ void sendSetMaxDCCurrent(int16_t maxDCCurrent)
 
 // Command: Set Maximum DC Brake Current (0x0B)
 // Payload: 2 bytes, maximum DC brake current (multiplied by 10; negative value expected)
-void sendSetMaxDCBrakeCurrent(int16_t maxDCBrakeCurrent)
+void inverter_setMaxDCBrakeCurrent(int16_t maxDCBrakeCurrent)
 {
     uint8_t payload[2];
     payload[0] = (uint8_t)((uint16_t)maxDCBrakeCurrent >> 8);
@@ -267,7 +267,7 @@ void sendSetMaxDCBrakeCurrent(int16_t maxDCBrakeCurrent)
 
 /* Command: Drive Enable (0x0C)
    As per Table 21, a 1-byte command where 1 enables drive and 0 disables it. */
-void sendDriveEnable(uint8_t enable)
+void inverter_setDriveEnable(uint8_t enable)
 {
   uint8_t payload[1];
   payload[0] = enable;

@@ -30,6 +30,8 @@
 
 #include "uartDMA.h"
 #include "ssd1306.h"
+#include "inverter.h"
+#include "vcu_can.h"
 
 /* USER CODE END Includes */
 
@@ -142,43 +144,6 @@ uint8_t BSP_SD_IsDetected(void)
 
   return status;
 }
-
-
-
-
-void CAN_setup(CAN_HandleTypeDef *hcan)
-{
-    // This filter allows for all message to pass
-    // Rx FIFO0 is used
-    CAN_FilterTypeDef sf;
-    sf.FilterIdHigh = 0x0000;
-    sf.FilterIdLow = 0x0000;
-    sf.FilterMaskIdHigh = 0x0000;
-    sf.FilterMaskIdLow = 0x0000;
-    sf.FilterFIFOAssignment = CAN_FILTER_FIFO0;
-    sf.FilterBank = 0;
-    sf.FilterMode = CAN_FILTERMODE_IDMASK;
-    sf.FilterScale = CAN_FILTERSCALE_32BIT;
-    sf.FilterActivation = CAN_FILTER_ENABLE;
-
-    if (HAL_CAN_ConfigFilter(hcan, &sf) != HAL_OK)
-    {
-        Error_Handler();
-    }
-
-    if (HAL_CAN_Start(hcan) != HAL_OK)
-    {
-        Error_Handler();
-    }
-
-    // Enable Interrupt callback when a CAN message is recieved
-    if (HAL_CAN_ActivateNotification(hcan, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK)
-    {
-        Error_Handler();
-    }
-}
-
-
 
 /* USER CODE END 0 */
 
@@ -636,8 +601,8 @@ static void MX_DMA_Init(void)
 static void MX_GPIO_Init(void)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
-/* USER CODE BEGIN MX_GPIO_Init_1 */
-/* USER CODE END MX_GPIO_Init_1 */
+  /* USER CODE BEGIN MX_GPIO_Init_1 */
+  /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
@@ -697,8 +662,8 @@ static void MX_GPIO_Init(void)
   HAL_NVIC_SetPriority(EXTI9_5_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
-/* USER CODE BEGIN MX_GPIO_Init_2 */
-/* USER CODE END MX_GPIO_Init_2 */
+  /* USER CODE BEGIN MX_GPIO_Init_2 */
+  /* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
@@ -751,7 +716,8 @@ void ssd1306_RasterIntCallback(uint8_t r)
     ssd1306_DrawRect(0, 22, apps2Avg * 128 / 4095, 8);
 
     char msg[32];
-    snprintf(msg, 64, "FPS: %.0lf (%ld ms)", 1 / ((float)timeDiff/1000.0), timeDiff);
+//    snprintf(msg, 64, "FPS: %.0lf (%ld ms)", 1 / ((float)timeDiff/1000.0), timeDiff);
+    snprintf(msg, 64, "ERPM: %ld", invrtr.erpm);
     ssd1306_SetCursor(2, 11);
     ssd1306_WriteString(msg, Font_7x10);
 }
@@ -802,43 +768,6 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 }
 
 
-void CAN_uartHexDump(CAN_RxHeaderTypeDef *rxHeader, uint8_t rxData[static 8])
-{
-    char txBuff[128];
-    char *cursor = txBuff;
-
-    // Format ID section
-    cursor += sprintf(cursor, "ID: 0x%03X, DATA:", (uint16_t)rxHeader->StdId);
-
-    // Format data bytes with spaces between them
-    for (int i = 0; i < rxHeader->DLC; i++)
-    {
-        cursor += sprintf(cursor, " %02X", rxData[i]);
-    }
-
-    // Add newline and calculate total length
-    cursor += sprintf(cursor, "\n");
-
-    // Send formatted message
-    printfDma("%s", txBuff);
-}
-
-
-// ISR Callback to process recieved can messages:
-void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
-{
-    CAN_RxHeaderTypeDef rxHeader;
-    uint8_t rxData[8];
-
-    // Get CAN Message
-    HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &rxHeader, rxData);
-
-    // Process recieved can messages here <---------------------------------------------------
-    // Parse incoming message bla2
-
-    CAN_uartHexDump(&rxHeader, rxData); // CAUTION: CAUSES ERROR SINCE MUTEX ACQ CANNOT BE CALLED FROM ISR
-}
-
 
 /* USER CODE END 4 */
 
@@ -860,8 +789,7 @@ void t_main_func(void *argument)
     HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc1Buff, ADC_BUF_LEN);
 
     // Start CAN
-    CAN_setup(&hcan1);
-    CAN_setup(&hcan2);
+    can_setup();
 
     /* Infinite loop */
     for(;;)
@@ -983,7 +911,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   /* USER CODE BEGIN Callback 0 */
 
   /* USER CODE END Callback 0 */
-  if (htim->Instance == TIM4) {
+  if (htim->Instance == TIM4)
+  {
     HAL_IncTick();
   }
   /* USER CODE BEGIN Callback 1 */

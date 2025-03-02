@@ -31,13 +31,16 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdbool.h>
 #include "cmsis_os.h"
 
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
+
+extern CAN_HandleTypeDef hcan1;
+extern CAN_HandleTypeDef hcan2;
 
 extern UART_HandleTypeDef huart2;
 extern osMessageQueueId_t q_printfHandle;

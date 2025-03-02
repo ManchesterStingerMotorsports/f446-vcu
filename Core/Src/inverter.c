@@ -1,13 +1,16 @@
 
 #include "inverter.h"
 #include "main.h"
+#include "vcu_can.h"
 
-// #include <string.h>
-// #include <stdio.h>
+#include <string.h>
+#include <stdio.h>
+
+InverterData invrtr;
 
 
 // SCALE = 10 except for ERPM and DriveEnable which is 1 #######################
-
+#define USE_EXT_ID                   true
 #define INVERTER_NODE_ID             0x22  // Example Node ID from CAN Manual
 #define CMD_SET_AC_CURRENT           0x01  // Set AC Current
 #define CMD_SET_BRAKE_CURRENT        0x02  // Set Brake Current
@@ -21,7 +24,6 @@
 #define CMD_SET_MAX_DC_CURRENT       0x0A  // Set Maximum DC Current
 #define CMD_SET_MAX_DC_BRAKE_CURRENT 0x0B  // Set Maximum DC Brake Current
 #define CMD_DRIVE_ENABLE             0x0C  // Drive Enable Command
-
 
 // CAN_HandleTypeDef hcan1;
 // UART_HandleTypeDef huart2;
@@ -59,61 +61,36 @@
 
 
 
-/* USER CODE BEGIN 4 */
+void decodeMessage0x20(uint8_t *data);
+void decodeMessage0x21(uint8_t *data);
+void decodeMessage0x22(uint8_t *data);
+void decodeMessage0x23(uint8_t *data);
+void decodeMessage0x24(uint8_t *data);
 
-void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
+
+void inverter_decode(uint32_t packetId, uint8_t rxData[static 8])
 {
-  CAN_RxHeaderTypeDef RxHeader;
-  uint8_t RxData[8];
-  if(hcan->Instance == CAN1)
-  {
-    if(HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxHeader, RxData) != HAL_OK)
+    switch(packetId)
     {
-      Error_Handler();
+    case 0x20:
+        decodeMessage0x20(rxData);
+        break;
+    case 0x21:
+        decodeMessage0x21(rxData);
+        break;
+    case 0x22:
+        decodeMessage0x22(rxData);
+        break;
+    case 0x23:
+        decodeMessage0x23(rxData);
+        break;
+    case 0x24:
+        decodeMessage0x24(rxData);
+        break;
+    default:
+        // Handle unknown messages as needed.
+        break;
     }
-    if(RxHeader.IDE == CAN_ID_EXT)
-    {
-		HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
-		uint32_t extId = RxHeader.ExtId;
-		uint8_t packetId = (uint8_t)(extId >> 8);   // Packet ID is the high byte
-		uint8_t nodeId = (uint8_t)(extId & 0xFF);     // Node ID is the low byte
-		char msg[100];
-		sprintf(msg, "Received: PacketID=0x%02X, NodeID=0x%02X, DLC=%ld, Data=",
-			  packetId, nodeId, RxHeader.DLC);
-		for(int i = 0; i < RxHeader.DLC; i++)
-		{
-		char byteStr[6];
-		sprintf(byteStr, "%02X ", RxData[i]);
-		strcat(msg, byteStr);
-		}
-		strcat(msg, "\r\n");
-		HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
-
-		switch(packetId)
-		{
-			case 0x20:
-				decodeMessage0x20(RxData);
-				break;
-			case 0x21:
-				decodeMessage0x21(RxData);
-				break;
-			case 0x22:
-				decodeMessage0x22(RxData);
-				break;
-			case 0x23:
-				decodeMessage0x23(RxData);
-				break;
-			case 0x24:
-				decodeMessage0x24(RxData);
-				break;
-			default:
-				// Handle unknown messages as needed.
-				break;
-		}
-
-		HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
-    }
-  }
 }
 
 /*
@@ -128,13 +105,16 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
    (See DTI CAN Manual V2.4, e.g., Table 11 for Set AC Current command.) */
 HAL_StatusTypeDef CAN_SendCommand(uint32_t cmdID, uint8_t* data, uint8_t dlc)
 {
-  CAN_TxHeaderTypeDef TxHeader;
-  uint32_t TxMailbox;
-  TxHeader.IDE = CAN_ID_EXT;
-  TxHeader.ExtId = ((uint32_t)cmdID << 8) | INVERTER_NODE_ID;
-  TxHeader.RTR = CAN_RTR_DATA;
-  TxHeader.DLC = dlc;
-  return HAL_CAN_AddTxMessage(&hcan1, &TxHeader, data, &TxMailbox);
+    if (USE_EXT_ID)
+    {
+        uint32_t id = ((uint32_t)cmdID << 8) | INVERTER_NODE_ID;
+        return can1_sendMsg(id, true, data, dlc);
+    }
+    else
+    {
+        uint32_t id = ((uint32_t)cmdID << 5) | INVERTER_NODE_ID;
+        return can1_sendMsg(id, false, data, dlc);
+    }
 }
 
 /* Command: Set AC Current (0x01)
@@ -313,15 +293,15 @@ void sendDriveEnable(uint8_t enable)
   */
 void decodeMessage0x20(uint8_t *data)
 {
-    int32_t erpm = ((int32_t)data[0] << 24) | ((int32_t)data[1] << 16) |
-                   ((int32_t)data[2] << 8)  | data[3];
-    int16_t dutyRaw = ((int16_t)data[4] << 8) | data[5];
-    float duty = dutyRaw / 10.0f;
-    int16_t inputVoltage = ((int16_t)data[6] << 8) | data[7];
+    invrtr.erpm = ((int32_t)data[0] << 24) | ((int32_t)data[1] << 16) |
+                        ((int32_t)data[2] << 8)  | data[3];
+    invrtr.dutyRaw = ((int16_t)data[4] << 8) | data[5];
+    invrtr.duty = invrtr.dutyRaw / 10.0f;
+    invrtr.inputVoltage = ((int16_t)data[6] << 8) | data[7];
 
-    char buffer[100];
-    sprintf(buffer, "0x20: ERPM = %ld RPM, Duty = %.1f%%, Input Voltage = %d V\r\n", erpm, duty, inputVoltage);
-    HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
+//    char buffer[100];
+//    sprintf(buffer, "0x20: ERPM = %ld RPM, Duty = %.1f%%, Input Voltage = %d V\r\n", erpm, duty, inputVoltage);
+//    HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
 }
 
 /**
@@ -333,15 +313,15 @@ void decodeMessage0x20(uint8_t *data)
   */
 void decodeMessage0x21(uint8_t *data)
 {
-    int16_t acCurrentRaw = ((int16_t)data[0] << 8) | data[1];
-    int16_t dcCurrentRaw = ((int16_t)data[2] << 8) | data[3];
-    float acCurrent = acCurrentRaw / 10.0f;
-    float dcCurrent = dcCurrentRaw / 10.0f;
+    invrtr.acCurrentRaw = ((int16_t)data[0] << 8) | data[1];
+    invrtr.dcCurrentRaw = ((int16_t)data[2] << 8) | data[3];
+    invrtr.acCurrent = invrtr.acCurrentRaw / 10.0f;
+    invrtr.dcCurrent = invrtr.dcCurrentRaw / 10.0f;
 
-    char buffer[100];
-    sprintf(buffer, "0x21: AC Current = %.1f A, DC Current = %.1f A\r\n",
-            acCurrent, dcCurrent);
-    HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
+//    char buffer[100];
+//    sprintf(buffer, "0x21: AC Current = %.1f A, DC Current = %.1f A\r\n",
+//            acCurrent, dcCurrent);
+//    HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
 }
 
 /**
@@ -354,16 +334,16 @@ void decodeMessage0x21(uint8_t *data)
   */
 void decodeMessage0x22(uint8_t *data)
 {
-    int16_t ctrlTempRaw = ((int16_t)data[0] << 8) | data[1];
-    int16_t motorTempRaw = ((int16_t)data[2] << 8) | data[3];
-    uint8_t faultCode = data[4];
-    float ctrlTemp = ctrlTempRaw / 10.0f;
-    float motorTemp = motorTempRaw / 10.0f;
+    invrtr.ctrlTempRaw = ((int16_t)data[0] << 8) | data[1];
+    invrtr.motorTempRaw = ((int16_t)data[2] << 8) | data[3];
+    invrtr.faultCode = data[4];
+    invrtr.ctrlTemp = invrtr.ctrlTempRaw / 10.0f;
+    invrtr.motorTemp = invrtr.motorTempRaw / 10.0f;
 
-    char buffer[100];
-    sprintf(buffer, "0x22: Ctrl Temp = %.1f°C, Motor Temp = %.1f°C, Fault Code = 0x%02X\r\n",
-            ctrlTemp, motorTemp, faultCode);
-    HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
+//    char buffer[100];
+//    sprintf(buffer, "0x22: Ctrl Temp = %.1f°C, Motor Temp = %.1f°C, Fault Code = 0x%02X\r\n",
+//            ctrlTemp, motorTemp, faultCode);
+//    HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
 }
 
 /**
@@ -374,16 +354,16 @@ void decodeMessage0x22(uint8_t *data)
   */
 void decodeMessage0x23(uint8_t *data)
 {
-    int32_t idRaw = ((int32_t)data[0] << 24) | ((int32_t)data[1] << 16) |
-                    ((int32_t)data[2] << 8)  | data[3];
-    int32_t iqRaw = ((int32_t)data[4] << 24) | ((int32_t)data[5] << 16) |
-                    ((int32_t)data[6] << 8)  | data[7];
-    float idValue = idRaw / 100.0f;
-    float iqValue = iqRaw / 100.0f;
+    invrtr.idRaw = ((int32_t)data[0] << 24) | ((int32_t)data[1] << 16) |
+                         ((int32_t)data[2] << 8)  | data[3];
+    invrtr.iqRaw = ((int32_t)data[4] << 24) | ((int32_t)data[5] << 16) |
+                         ((int32_t)data[6] << 8)  | data[7];
+    invrtr.idValue = invrtr.idRaw / 100.0f;
+    invrtr.iqValue = invrtr.iqRaw / 100.0f;
 
-    char buffer[100];
-    sprintf(buffer, "0x23: Id = %.2f, Iq = %.2f\r\n", idValue, iqValue);
-    HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
+//    char buffer[100];
+//    sprintf(buffer, "0x23: Id = %.2f, Iq = %.2f\r\n", idValue, iqValue);
+//    HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
 }
 
 /**
@@ -400,30 +380,31 @@ void decodeMessage0x23(uint8_t *data)
   */
 void decodeMessage0x24(uint8_t *data)
 {
-    int8_t throttle = (int8_t)data[0];
-    int8_t brake = (int8_t)data[1];
+    invrtr.throttle = (int8_t)data[0];
+    invrtr.brake = (int8_t)data[1];
     uint8_t digitalInputs = data[2];   // Bits 0-3: digital inputs 1-4
     uint8_t digitalOutputs = data[3];  // Bits 0-3: digital outputs 1-4
-    uint8_t canMapVersion = data[7];
+    invrtr.canMapVersion = data[7];
 
     /* Extract individual digital input bits */
-    uint8_t din1 = digitalInputs & 0x01;
-    uint8_t din2 = (digitalInputs >> 1) & 0x01;
-    uint8_t din3 = (digitalInputs >> 2) & 0x01;
-    uint8_t din4 = (digitalInputs >> 3) & 0x01;
+    invrtr.din1 = digitalInputs & 0x01;
+    invrtr.din2 = (digitalInputs >> 1) & 0x01;
+    invrtr.din3 = (digitalInputs >> 2) & 0x01;
+    invrtr.din4 = (digitalInputs >> 3) & 0x01;
 
     /* Extract individual digital output bits */
-    uint8_t dout1 = digitalOutputs & 0x01;
-    uint8_t dout2 = (digitalOutputs >> 1) & 0x01;
-    uint8_t dout3 = (digitalOutputs >> 2) & 0x01;
-    uint8_t dout4 = (digitalOutputs >> 3) & 0x01;
+    invrtr.dout1 = digitalOutputs & 0x01;
+    invrtr.dout2 = (digitalOutputs >> 1) & 0x01;
+    invrtr.dout3 = (digitalOutputs >> 2) & 0x01;
+    invrtr.dout4 = (digitalOutputs >> 3) & 0x01;
 
-    char buffer[150];
-    sprintf(buffer,
-            "0x24: Throttle = %d%%, Brake = %d%%, DIN = %d %d %d %d, DOUT = %d %d %d %d, CAN Map ver = %d\r\n",
-            throttle, brake, din1, din2, din3, din4, dout1, dout2, dout3, dout4, canMapVersion);
-    HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
+//    char buffer[150];
+//    sprintf(buffer,
+//            "0x24: Throttle = %d%%, Brake = %d%%, DIN = %d %d %d %d, DOUT = %d %d %d %d, CAN Map ver = %d\r\n",
+//            throttle, brake, din1, din2, din3, din4, dout1, dout2, dout3, dout4, canMapVersion);
+//    HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
 }
+
 
 
 

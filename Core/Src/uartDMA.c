@@ -57,6 +57,7 @@ int printfDma(const char *format, ...)
         Error_Handler();
     }
 
+    // Notify using flag to start transmit if not already
     osThreadFlagsSet(t_uartHandle, FLAG_TASK_ACTIVE);
 
     return prtStr.len;

@@ -15,66 +15,64 @@
 
 void can_setup(void)
 {
-    // This filter allows for all message to pass
+    // Setup the lowest priority filter bank to allow all messages to pass
     CAN_FilterTypeDef sf;
     sf.FilterIdHigh = 0x0000;
     sf.FilterIdLow = 0x0000;
     sf.FilterMaskIdHigh = 0x0000;
     sf.FilterMaskIdLow = 0x0000;
     sf.FilterFIFOAssignment = CAN_FILTER_FIFO0;
-    sf.FilterBank = 14;
+    sf.FilterBank = 13;
     sf.FilterMode = CAN_FILTERMODE_IDMASK;
     sf.FilterScale = CAN_FILTERSCALE_32BIT;
     sf.FilterActivation = CAN_FILTER_ENABLE;
     sf.SlaveStartFilterBank = 14;
 
+    if (HAL_CAN_ConfigFilter(&hcan1, &sf) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+    sf.FilterBank = 23;
     if (HAL_CAN_ConfigFilter(&hcan2, &sf) != HAL_OK)
     {
         Error_Handler();
     }
-    sf.FilterBank = 13;
-    if (HAL_CAN_ConfigFilter(&hcan1, &sf) != HAL_OK)
-    {
-        Error_Handler();
-    }
 
-    // Config filter for Inverter IDs (0x20 to 0x24)
-    // Filter is set to filter (0x2000 to 0x20FF) ext ID to FIFO1
-
+    // Config filter for Inverter packet IDs (0x20 to 0x24)
+    // Filter is set to filter (0x2000 to 0x27FF) ext ID to FIFO1
     uint32_t idFilter   = 0x00002000;
-    uint32_t idMask     = 0xFFFF2000 + (0b111ul << 8);
-
-    sf.FilterIdHigh         =  (idFilter <<  5) && (0xFFFF);
-    sf.FilterIdLow          = ((idFilter >> (11)) << 3) && (0xFFFF);
-    sf.FilterMaskIdHigh     =  (idMask   <<  5) && (0xFFFF);
-    sf.FilterMaskIdLow      = ((idMask   >> (11)) << 3) && (0xFFFF);
-    sf.FilterFIFOAssignment = CAN_FILTER_FIFO1;
-    sf.FilterBank = 3;
+    uint32_t idMask     = 0xFFFFFFFF ^ (0x07FF);      // Dont care's for inverter IDs and the 5 packet Ids
+    sf.FilterIdHigh     = (idFilter >> 13) & 0xFFFF;  // 29 - 16 = 13 bits (the higher bits of the filter)
+    sf.FilterIdLow      = (idFilter << 3 ) & 0xFFF8;  // 3 bits for {IDE}, {RTR}, {0}
+    sf.FilterMaskIdHigh = (idMask   >> 13) & 0xFFFF;
+    sf.FilterMaskIdLow  = (idMask   << 3 ) & 0xFFF8;
+    sf.FilterFIFOAssignment = CAN_FILTER_FIFO0;
+    sf.FilterBank = 0;                              // Lower the number higher the priority
     sf.FilterMode = CAN_FILTERMODE_IDMASK;
     sf.FilterScale = CAN_FILTERSCALE_32BIT;
     sf.FilterActivation = CAN_FILTER_ENABLE;
     sf.SlaveStartFilterBank = 14;
-
     if (HAL_CAN_ConfigFilter(&hcan1, &sf) != HAL_OK)
     {
         Error_Handler();
     }
 
-    idFilter   = 0x00002000;
-    idMask     = 0x00000000;
-
-    sf.FilterIdHigh         =  (idFilter <<  5) && (0xFFFF);
-    sf.FilterIdLow          = ((idFilter >> (11)) << 3) && (0xFFFF);
-    sf.FilterMaskIdHigh     =  (idMask   <<  5) && (0xFFFF);
-    sf.FilterMaskIdLow      = ((idMask   >> (11)) << 3) && (0xFFFF);
+    // Config filter for other stuff
+    idFilter   = 0x0000FF00;
+    idMask     = 0xFFFFFFFF;
+    sf.FilterIdHigh     = (idFilter >> 13) & 0xFFFF;  // 29 - 16 = 13 bits (the higher bits of the filter)
+    sf.FilterIdLow      = (idFilter << 3 ) & 0xFFF8;  // 3 bits for {IDE}, {RTR}, {0}
+    sf.FilterMaskIdHigh = (idMask   >> 13) & 0xFFFF;
+    sf.FilterMaskIdLow  = (idMask   << 3 ) & 0xFFF8;
     sf.FilterFIFOAssignment = CAN_FILTER_FIFO1;
-    sf.FilterBank = 2;
-
+    sf.FilterBank = 1;
     if (HAL_CAN_ConfigFilter(&hcan1, &sf) != HAL_OK)
     {
         Error_Handler();
     }
 
+    // Start both CAN peripheral
     if (HAL_CAN_Start(&hcan1) != HAL_OK)
     {
         Error_Handler();
@@ -142,6 +140,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
         Error_Handler();
     }
 
+    printfDma("FIFO0: %d, ", rxHeader.FilterMatchIndex);
     can_uartHexDump(&rxHeader, rxData); // Dumps the raw CAN message to UART
 
     if (hcan == &hcan1)
@@ -183,7 +182,7 @@ void HAL_CAN_RxFifo1MsgPendingCallback(CAN_HandleTypeDef *hcan)
         Error_Handler();
     }
 
-    printfDma("FI: %d, ", rxHeader.FilterMatchIndex);
+    printfDma("FIFO1: %d, ", rxHeader.FilterMatchIndex);
     can_uartHexDump(&rxHeader, rxData); // Dumps the raw CAN message to UART
 
     if (hcan == &hcan1)

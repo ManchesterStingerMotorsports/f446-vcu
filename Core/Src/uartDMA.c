@@ -23,7 +23,7 @@
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
-    osThreadFlagsSet(t_uartHandle, 0x0001U);
+    osThreadFlagsSet(t_uartHandle, FLAG_UART_INACTIVE);
 }
 
 

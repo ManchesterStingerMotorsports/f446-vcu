@@ -90,6 +90,13 @@ const osThreadAttr_t t_uart_attributes = {
   .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
+/* Definitions for t_logging */
+osThreadId_t t_loggingHandle;
+const osThreadAttr_t t_logging_attributes = {
+  .name = "t_logging",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
 /* Definitions for q_printf */
 osMessageQueueId_t q_printfHandle;
 const osMessageQueueAttr_t q_printf_attributes = {
@@ -112,6 +119,7 @@ static void MX_SDIO_SD_Init(void);
 void t_main_func(void *argument);
 void t_faultHandler_func(void *argument);
 extern void t_uart_func(void *argument);
+void t_logging_func(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -119,6 +127,16 @@ extern void t_uart_func(void *argument);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+typedef enum
+{
+    TS_INACTIVE,
+    TS_ACTIVE,
+    R2D_MODE,
+} VcuState;
+
+VcuState vcuState = TS_INACTIVE;
+
 
 uint16_t adc1Buff[ADC_BUF_LEN]; // buffer to store values read from adc1
 uint16_t volatile apps1Avg = 0;
@@ -221,6 +239,9 @@ int main(void)
 
   /* creation of t_uart */
   t_uartHandle = osThreadNew(t_uart_func, NULL, &t_uart_attributes);
+
+  /* creation of t_logging */
+  t_loggingHandle = osThreadNew(t_logging_func, NULL, &t_logging_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -690,6 +711,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 
         default:
             count++;
+            break;
     }
 
 //    if(GPIO_Pin == SD_CARD_DETECT_Pin) // If The INT Source Is EXTI Line9 (A9 Pin)
@@ -781,44 +803,19 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 void t_main_func(void *argument)
 {
   /* USER CODE BEGIN 5 */
-    ssd1306_Init();
-//    ssd1306_FlipScreenVertically();
-    ssd1306_SetRasterInt(1);
-
-    // Start ADC Conversion
-    HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc1Buff, ADC_BUF_LEN);
-
-    // Start CAN
-    can_setup();
 
     /* Infinite loop */
     for(;;)
     {
-        HAL_GPIO_TogglePin(DO_R2D_LIGHT_GPIO_Port, DO_R2D_LIGHT_Pin);
-        osDelay(350);
-        HAL_GPIO_TogglePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin);
-        osDelay(241);
-        HAL_GPIO_TogglePin(DO_SC_LIGHT_GPIO_Port,  DO_SC_LIGHT_Pin);
-        osDelay(111);
+        osDelay(1);
 
-
-        CAN_TxHeaderTypeDef txHeader;
-
-        txHeader.StdId = 69;            // ID - Lower ID - higher priority
-        txHeader.IDE = CAN_ID_STD;      // Extended 2.0B or Standard 2.0A
-        txHeader.RTR = CAN_RTR_DATA;    // Remote or Data Frame
-        txHeader.DLC = 8;               // Data Length Code (8 MAX)
-
-        uint32_t mb;                // Stores which Tx Mailbox is used
-        uint8_t data[8] = {0xEF, 0xBE, 0xAD, 0xDE, 0xEF, 0xBE, 0xAD, 0xDE};
-
-        if (HAL_CAN_GetTxMailboxesFreeLevel(&hcan2))
+        switch (vcuState)
         {
-            if (HAL_CAN_AddTxMessage(&hcan2, &txHeader, data, &mb) != HAL_OK)
-            {
-                // CAN peripheral tx error
-                Error_Handler();
-            }
+        case TS_INACTIVE:
+            break;
+
+        default:
+            break;
         }
     }
   /* USER CODE END 5 */
@@ -835,8 +832,41 @@ void t_faultHandler_func(void *argument)
 {
   /* USER CODE BEGIN t_faultHandler_func */
 
-    uint8_t buff[32];
 
+    for(;;)
+    {
+
+        osDelay(500);
+    }
+
+  /* USER CODE END t_faultHandler_func */
+}
+
+/* USER CODE BEGIN Header_t_logging_func */
+/**
+* @brief Function implementing the t_logging thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_t_logging_func */
+void t_logging_func(void *argument)
+{
+    /* USER CODE BEGIN t_logging_func */
+
+    osDelay(500); // Startup delay
+
+    // Start ADC Conversion
+    HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc1Buff, ADC_BUF_LEN);
+
+    // Start CAN
+    can_setup();
+
+    /* OLED SCREEN STUFF */
+    ssd1306_Init();
+    ssd1306_SetRasterInt(1);        // Enable interrupt
+//  ssd1306_FlipScreenVertically();
+
+    /* SD card stuff */
     if (isCardDetected)
     {
         printfDma("Block size   : %lu\n", hsd.SdCard.BlockSize);
@@ -852,6 +882,7 @@ void t_faultHandler_func(void *argument)
 
         FIL fil;
         UINT bytesRead;
+        uint8_t buff[32];
 
         /* Open a text file (w+ mode)*/
         if (f_open(&fil, "message.txt", FA_WRITE | FA_READ) != FR_OK)
@@ -880,27 +911,54 @@ void t_faultHandler_func(void *argument)
     }
 
     float fr = 0;
-
+    /* Infinite loop */
     for(;;)
     {
+        osDelay(100);
+
 //        HAL_GPIO_TogglePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin);
 //        HAL_GPIO_TogglePin(DO_SC_LIGHT_GPIO_Port,  DO_SC_LIGHT_Pin);
-        osDelay(500);
 
         fr = fr + 1;
 
         inverter_setERPM((uint32_t) fr);
         inverter_setDriveEnable(1);
-
+        inverter_setDriveEnable(1);
 
 //        printfDma("%f %f %f \n", fr, fr, fr);
 //        printfDma("                           \n");
 //        char *msg = "Test s\n";
 //        HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+
+        HAL_GPIO_TogglePin(DO_R2D_LIGHT_GPIO_Port, DO_R2D_LIGHT_Pin);
+        osDelay(350);
+        HAL_GPIO_TogglePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin);
+        osDelay(241);
+        HAL_GPIO_TogglePin(DO_SC_LIGHT_GPIO_Port,  DO_SC_LIGHT_Pin);
+        osDelay(111);
+
+
+        CAN_TxHeaderTypeDef txHeader;
+
+        txHeader.StdId = 69;            // ID - Lower ID - higher priority
+        txHeader.IDE = CAN_ID_STD;      // Extended 2.0B or Standard 2.0A
+        txHeader.RTR = CAN_RTR_DATA;    // Remote or Data Frame
+        txHeader.DLC = 8;               // Data Length Code (8 MAX)
+
+        uint32_t mb;                // Stores which Tx Mailbox is used
+        uint8_t data[8] = {0xEF, 0xBE, 0xAD, 0xDE, 0xEF, 0xBE, 0xAD, 0xDE};
+
+        if (HAL_CAN_GetTxMailboxesFreeLevel(&hcan2))
+        {
+            if (HAL_CAN_AddTxMessage(&hcan2, &txHeader, data, &mb) != HAL_OK)
+            {
+                // CAN peripheral tx error
+                Error_Handler();
+            }
+        }
+
     }
-
-
-  /* USER CODE END t_faultHandler_func */
+    /* USER CODE END t_logging_func */
 }
 
 /**
@@ -936,6 +994,7 @@ void Error_Handler(void)
   __disable_irq();
   while (1)
   {
+
   }
   /* USER CODE END Error_Handler_Debug */
 }

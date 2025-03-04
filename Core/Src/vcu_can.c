@@ -130,11 +130,17 @@ void can_uartHexDump(CAN_RxHeaderTypeDef *rxHeader, uint8_t rxData[static 1])
     char *cursor = txBuff;
     uint32_t id;
 
-    if (rxHeader->IDE == CAN_ID_STD) { id = rxHeader->StdId; }
-    else                             { id = rxHeader->ExtId; }
-
     // Format ID section
-    cursor += sprintf(cursor, "ID: 0x%03X, DATA:", (uint16_t)id);
+    if (rxHeader->IDE == CAN_ID_STD)
+    {
+        id = rxHeader->StdId;
+        cursor += sprintf(cursor, "ID: 0x%04lX, DATA:", id);
+    }
+    else
+    {
+        id = rxHeader->ExtId;
+        cursor += sprintf(cursor, "ID: 0x%08lX, DATA:", id);
+    }
 
     // Format data bytes with spaces between them
     for (int i = 0; i < rxHeader->DLC; i++)
@@ -254,12 +260,26 @@ HAL_StatusTypeDef can_sendMsg(CAN_HandleTypeDef *hcan, uint32_t id, bool isExtId
 
 HAL_StatusTypeDef can1_sendMsg(uint32_t id, bool isExtId, uint8_t* data, uint8_t dlc)
 {
-    return can_sendMsg(&hcan1, id, isExtId, data, dlc);
+    HAL_StatusTypeDef status = can_sendMsg(&hcan1, id, isExtId, data, dlc);
+
+    if (status == HAL_BUSY) // If txMailbox full
+    {
+        printfDma("ERR: TxMailbox1 Full (Data Loss) \n");
+    }
+
+    return status;
 }
 
 HAL_StatusTypeDef can2_sendMsg(uint32_t id, bool isExtId, uint8_t* data, uint8_t dlc)
 {
-    return can_sendMsg(&hcan2, id, isExtId, data, dlc);
+    HAL_StatusTypeDef status = can_sendMsg(&hcan2, id, isExtId, data, dlc);
+
+    if (status == HAL_BUSY) // If txMailbox full
+    {
+        printfDma("ERR: TxMailbox2 Full (Data Loss) \n");
+    }
+
+    return status;
 }
 
 

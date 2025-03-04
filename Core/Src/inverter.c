@@ -122,13 +122,13 @@ HAL_StatusTypeDef CAN_SendCommand(uint32_t cmdID, uint8_t* data, uint8_t dlc)
    (in Apk, scaled by 10) in Big Endian order. */
 void inverter_setACCurrent(int16_t acCurrent)
 {
-  uint8_t payload[2];
-  payload[0] = (uint8_t)((uint16_t)acCurrent >> 8);
-  payload[1] = (uint8_t)(acCurrent & 0xFF);
-  if (CAN_SendCommand(CMD_SET_AC_CURRENT, payload, 2) != HAL_OK)
-  {
-    Error_Handler();
-  }
+    uint8_t payload[2];
+    payload[0] = (uint8_t)((uint16_t)acCurrent >> 8);
+    payload[1] = (uint8_t)(acCurrent & 0xFF);
+    if (CAN_SendCommand(CMD_SET_AC_CURRENT, payload, 2) != HAL_OK)
+    {
+//        Error_Handler();
+    }
 }
 
 void inverter_setBrakeCurrent(int16_t brkCurrent)
@@ -138,7 +138,7 @@ void inverter_setBrakeCurrent(int16_t brkCurrent)
 	payload[1] = (uint8_t)(brkCurrent & 0xFF);
 	if (CAN_SendCommand(CMD_SET_BRAKE_CURRENT, payload, 2) != HAL_OK)
 	{
-	Error_Handler();
+//	    Error_Handler();
 	}
 }
 
@@ -146,15 +146,15 @@ void inverter_setBrakeCurrent(int16_t brkCurrent)
    According to Table 13, a 4-byte signed value (Big Endian) is sent. */
 void inverter_setERPM(int32_t erpm)
 {
-  uint8_t payload[4];
-  payload[0] = (uint8_t)((uint32_t)erpm >> 24);
-  payload[1] = (uint8_t)((uint32_t)erpm >> 16);
-  payload[2] = (uint8_t)((uint32_t)erpm >> 8);
-  payload[3] = (uint8_t)(erpm & 0xFF);
-  if (CAN_SendCommand(CMD_SET_ERPM, payload, 4) != HAL_OK)
-  {
-    Error_Handler();
-  }
+    uint8_t payload[4];
+    payload[0] = (uint8_t)((uint32_t)erpm >> 24);
+    payload[1] = (uint8_t)((uint32_t)erpm >> 16);
+    payload[2] = (uint8_t)((uint32_t)erpm >> 8);
+    payload[3] = (uint8_t)(erpm & 0xFF);
+    if (CAN_SendCommand(CMD_SET_ERPM, payload, 4) != HAL_OK)
+    {
+//        Error_Handler();
+    }
 }
 
 
@@ -167,7 +167,7 @@ void inverter_setPosition(int16_t position)
     payload[1] = (uint8_t)(position & 0xFF);
     if (CAN_SendCommand(CMD_SET_POSITION, payload, 2) != HAL_OK)
     {
-        Error_Handler();
+//        Error_Handler();
     }
 }
 
@@ -180,7 +180,7 @@ void inverter_setRelativeCurrent(int16_t relativeCurrent)
     payload[1] = (uint8_t)(relativeCurrent & 0xFF);
     if (CAN_SendCommand(CMD_SET_RELATIVE_CURRENT, payload, 2) != HAL_OK)
     {
-        Error_Handler();
+//        Error_Handler();
     }
 }
 
@@ -193,7 +193,7 @@ void inverter_setRelativeBrakeCurrent(int16_t relativeBrakeCurrent)
     payload[1] = (uint8_t)(relativeBrakeCurrent & 0xFF);
     if (CAN_SendCommand(CMD_SET_RELATIVE_BRAKE_CUR, payload, 2) != HAL_OK)
     {
-        Error_Handler();
+//        Error_Handler();
     }
 }
 
@@ -209,7 +209,7 @@ void inverter_setDigitalOutput(uint8_t digitalOut)
     }
     if (CAN_SendCommand(CMD_SET_DIGITAL_OUTPUT, payload, 8) != HAL_OK)
     {
-        Error_Handler();
+//        Error_Handler();
     }
 }
 
@@ -222,7 +222,7 @@ void inverter_setMaxACCurrent(int16_t maxACCurrent)
     payload[1] = (uint8_t)(maxACCurrent & 0xFF);
     if (CAN_SendCommand(CMD_SET_MAX_AC_CURRENT, payload, 2) != HAL_OK)
     {
-        Error_Handler();
+//        Error_Handler();
     }
 }
 
@@ -235,7 +235,7 @@ void inverter_setMaxBrakeACCurrent(int16_t maxBrakeACCurrent)
     payload[1] = (uint8_t)(maxBrakeACCurrent & 0xFF);
     if (CAN_SendCommand(CMD_SET_MAX_BRAKE_AC_CURRENT, payload, 2) != HAL_OK)
     {
-        Error_Handler();
+//        Error_Handler();
     }
 }
 
@@ -248,7 +248,7 @@ void inverter_setMaxDCCurrent(int16_t maxDCCurrent)
     payload[1] = (uint8_t)(maxDCCurrent & 0xFF);
     if (CAN_SendCommand(CMD_SET_MAX_DC_CURRENT, payload, 2) != HAL_OK)
     {
-        Error_Handler();
+//        Error_Handler();
     }
 }
 
@@ -261,7 +261,7 @@ void inverter_setMaxDCBrakeCurrent(int16_t maxDCBrakeCurrent)
     payload[1] = (uint8_t)(maxDCBrakeCurrent & 0xFF);
     if (CAN_SendCommand(CMD_SET_MAX_DC_BRAKE_CURRENT, payload, 2) != HAL_OK)
     {
-        Error_Handler();
+//        Error_Handler();
     }
 }
 
@@ -269,12 +269,12 @@ void inverter_setMaxDCBrakeCurrent(int16_t maxDCBrakeCurrent)
    As per Table 21, a 1-byte command where 1 enables drive and 0 disables it. */
 void inverter_setDriveEnable(uint8_t enable)
 {
-  uint8_t payload[1];
-  payload[0] = enable;
-  if (CAN_SendCommand(CMD_DRIVE_ENABLE, payload, 1) != HAL_OK)
-  {
-    Error_Handler();
-  }
+    uint8_t payload[1];
+    payload[0] = enable;
+    if (CAN_SendCommand(CMD_DRIVE_ENABLE, payload, 1) != HAL_OK)
+    {
+//        Error_Handler();
+    }
 }
 
 

@@ -923,7 +923,12 @@ void t_logging_func(void *argument)
 
         inverter_setERPM((uint32_t) fr);
         inverter_setDriveEnable(1);
-        inverter_setDriveEnable(1);
+
+        uint32_t id = 0x69;
+        bool isExtId = false;
+        uint8_t data[8] = {0xEF, 0xBE, 0xAD, 0xDE, 0xEF, 0xBE, 0xAD, 0xDE};
+
+        can1_sendMsg(id, isExtId, data, sizeof(data));
 
 //        printfDma("%f %f %f \n", fr, fr, fr);
 //        printfDma("                           \n");
@@ -936,27 +941,6 @@ void t_logging_func(void *argument)
         osDelay(241);
         HAL_GPIO_TogglePin(DO_SC_LIGHT_GPIO_Port,  DO_SC_LIGHT_Pin);
         osDelay(111);
-
-
-        CAN_TxHeaderTypeDef txHeader;
-
-        txHeader.StdId = 69;            // ID - Lower ID - higher priority
-        txHeader.IDE = CAN_ID_STD;      // Extended 2.0B or Standard 2.0A
-        txHeader.RTR = CAN_RTR_DATA;    // Remote or Data Frame
-        txHeader.DLC = 8;               // Data Length Code (8 MAX)
-
-        uint32_t mb;                // Stores which Tx Mailbox is used
-        uint8_t data[8] = {0xEF, 0xBE, 0xAD, 0xDE, 0xEF, 0xBE, 0xAD, 0xDE};
-
-        if (HAL_CAN_GetTxMailboxesFreeLevel(&hcan2))
-        {
-            if (HAL_CAN_AddTxMessage(&hcan2, &txHeader, data, &mb) != HAL_OK)
-            {
-                // CAN peripheral tx error
-                Error_Handler();
-            }
-        }
-
     }
     /* USER CODE END t_logging_func */
 }

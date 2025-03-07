@@ -169,7 +169,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
     }
 
     printfDma("FIFO0: %d, ", rxHeader.FilterMatchIndex);
-    can_uartHexDump(&rxHeader, rxData); // Dumps the raw CAN message to UART
+//    can_uartHexDump(&rxHeader, rxData); // Dumps the raw CAN message to UART
 
     if (rxHeader.FilterMatchIndex == 0) // If filter matches inverter CAN IDs
     {

@@ -62,6 +62,9 @@ typedef struct
     uint8_t dout3;
     uint8_t dout4;
 
+    // --- Command Variables --- //
+    int32_t setErpm;
+
 } InverterData;
 
 extern InverterData invrtr;

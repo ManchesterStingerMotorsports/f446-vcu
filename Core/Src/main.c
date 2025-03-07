@@ -723,6 +723,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 uint32_t prevTime = 0;
 uint32_t timeDiff = 0;
 uint32_t currTime = 0;
+uint32_t setErpm = 0;
 
 void ssd1306_RasterIntCallback(uint8_t r)
 {
@@ -735,12 +736,17 @@ void ssd1306_RasterIntCallback(uint8_t r)
 
     ssd1306_SetColor(White);
     ssd1306_DrawRect(0,  0, apps1Avg * 128 / 4095, 8);
-    ssd1306_DrawRect(0, 22, apps2Avg * 128 / 4095, 8);
+//    ssd1306_DrawRect(0, 22, apps2Avg * 128 / 4095, 8);
 
     char msg[32];
 //    snprintf(msg, 64, "FPS: %.0lf (%ld ms)", 1 / ((float)timeDiff/1000.0), timeDiff);
-    snprintf(msg, 64, "RPM:%ld V:%d %ld", invrtr.erpm, invrtr.inputVoltage, timeDiff);
-    ssd1306_SetCursor(2, 11);
+
+    snprintf(msg, 64, "R ERPM:%ld V:%d", invrtr.erpm, invrtr.inputVoltage);
+    ssd1306_SetCursor(0, 11);
+    ssd1306_WriteString(msg, Font_7x10);
+
+    snprintf(msg, 64, "S ERPM:%ld", invrtr.setErpm);
+    ssd1306_SetCursor(0, 21);
     ssd1306_WriteString(msg, Font_7x10);
 }
 
@@ -789,7 +795,7 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
     }
 }
 
-
+float apps1Scaled = 0.0;
 
 /* USER CODE END 4 */
 
@@ -910,38 +916,56 @@ void t_logging_func(void *argument)
         f_close(&fil);
     }
 
-    float fr = 0;
+//    float fr = 0;
+
+
     /* Infinite loop */
     for(;;)
     {
-        osDelay(100);
+        osDelay(10);
 
 //        HAL_GPIO_TogglePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin);
 //        HAL_GPIO_TogglePin(DO_SC_LIGHT_GPIO_Port,  DO_SC_LIGHT_Pin);
 
-        fr = fr + 1;
+//        fr = fr + 1;
 
-        inverter_setERPM((uint32_t) fr);
+        const uint32_t maxErpm = 20000;
+        apps1Scaled = (float) apps1Avg / 4095.0;
+
+        if (apps1Scaled > 0.20)
+        {
+            invrtr.setErpm = (uint32_t) (apps1Scaled * maxErpm);
+        }
+        else
+        {
+            invrtr.setErpm = 0;
+        }
+
+        inverter_setERPM((uint32_t) invrtr.setErpm);
         inverter_setDriveEnable(1);
 
-        uint32_t id = 0x69;
-        bool isExtId = false;
-        uint8_t data[8] = {0xEF, 0xBE, 0xAD, 0xDE, 0xEF, 0xBE, 0xAD, 0xDE};
-
-        can1_sendMsg(id, isExtId, data, sizeof(data));
+//        uint32_t id = 0x69;
+//        bool isExtId = false;
+//        uint8_t data[8] = {0xEF, 0xBE, 0xAD, 0xDE, 0xEF, 0xBE, 0xAD, 0xDE};
+//
+//        can1_sendMsg(id, isExtId, data, sizeof(data));
 
 //        printfDma("%f %f %f \n", fr, fr, fr);
 //        printfDma("                           \n");
 //        char *msg = "Test s\n";
 //        HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
 
-        HAL_GPIO_TogglePin(DO_R2D_LIGHT_GPIO_Port, DO_R2D_LIGHT_Pin);
-        osDelay(350);
-        HAL_GPIO_TogglePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin);
-        osDelay(241);
-        HAL_GPIO_TogglePin(DO_SC_LIGHT_GPIO_Port,  DO_SC_LIGHT_Pin);
-        osDelay(111);
+//        HAL_GPIO_TogglePin(DO_R2D_LIGHT_GPIO_Port, DO_R2D_LIGHT_Pin);
+//        osDelay(350);
+//        HAL_GPIO_TogglePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin);
+//        osDelay(241);
+//        HAL_GPIO_TogglePin(DO_SC_LIGHT_GPIO_Port,  DO_SC_LIGHT_Pin);
+//        osDelay(111);
     }
+//        _LED_GPIO_Port, DEBUG_LED_Pin);
+    //        HAL_GPIO_TogglePin(DO_SC_LIGHT_GPIO_Port,  DO_SC_LIGHT_Pin);
+
+    //        fr = fr + 1;
     /* USER CODE END t_logging_func */
 }
 

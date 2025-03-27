@@ -736,7 +736,7 @@ void ssd1306_RasterIntCallback(uint8_t r)
 
     ssd1306_SetColor(White);
     ssd1306_DrawRect(0,  0, apps1Avg * 128 / 4095, 8);
-//    ssd1306_DrawRect(0, 22, apps2Avg * 128 / 4095, 8);
+    ssd1306_DrawRect(0,  0, apps2Avg * 128 / 4095, 8);
 
     char msg[32];
 //    snprintf(msg, 64, "FPS: %.0lf (%ld ms)", 1 / ((float)timeDiff/1000.0), timeDiff);
@@ -929,10 +929,14 @@ void t_logging_func(void *argument)
 
 //        fr = fr + 1;
 
-        const uint32_t maxErpm = 20000;
+        const uint32_t maxErpm = 50000;
         apps1Scaled = (float) apps1Avg / 4095.0;
 
-        if (apps1Scaled > 0.20)
+        if (apps1Scaled > 0.80)
+        {
+            invrtr.setErpm = (uint32_t) (1.0 * maxErpm);
+        }
+        else if (apps1Scaled > 0.20)
         {
             invrtr.setErpm = (uint32_t) (apps1Scaled * maxErpm);
         }
@@ -940,6 +944,7 @@ void t_logging_func(void *argument)
         {
             invrtr.setErpm = 0;
         }
+
 
         inverter_setERPM((uint32_t) invrtr.setErpm);
         inverter_setDriveEnable(1);

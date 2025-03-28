@@ -1,5 +1,8 @@
 #source - https://shadyelectronics.com/how-to-use-github-with-stm32cubeide/
 
+#old
+/old/*
+
 #settings
 .settings/
 

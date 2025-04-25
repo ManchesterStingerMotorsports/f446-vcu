@@ -689,24 +689,68 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+volatile uint32_t lastDebounceTime_TS = 0;
+volatile uint32_t lastDebounceTime_R2D = 0;
+volatile uint32_t lastDebounceTime_SC = 0;
+#define DEBOUNCE_DELAY 500 // 500 ms debounce delay
 int count = 0;
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
+    uint32_t currentTime = HAL_GetTick();
+
     switch (GPIO_Pin)
     {
         case IT_TS_BUTTON_Pin:
             HAL_GPIO_WritePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin, GPIO_PIN_RESET);
             HAL_GPIO_TogglePin(DO_SC_RELAY_GPIO_Port, DO_SC_RELAY_Pin);
-            break;
+
+            // Debounce check
+            if (currentTime - lastDebounceTime_TS < DEBOUNCE_DELAY)
+              return;
+
+            lastDebounceTime_TS = currentTime;
+
+            // TS button: TS_INACTIVE -> TS_ACTIVE
+            if (vcuState == TS_INACTIVE)
+            {
+                vcuState = TS_ACTIVE;
+        
+                printfDma("State changed to TS_ACTIVE\n");
+            }
+        break;
 
         case IT_R2D_BUTTON_Pin:
             HAL_GPIO_WritePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin, GPIO_PIN_SET);
-            HAL_GPIO_TogglePin(DO_SC_RELAY_GPIO_Port, DO_SC_RELAY_Pin);
+            // Debounce check
+            if (currentTime - lastDebounceTime_R2D < DEBOUNCE_DELAY)
+                return;
+
+            lastDebounceTime_R2D = currentTime;
+
+            // R2D button: TS_ACTIVE -> R2D_MODE only
+            if (vcuState == TS_ACTIVE)
+            {
+              vcuState = R2D_MODE;
+              // TODO: R2D Transition
+
+              // Sound R2D buzzer for 1 second
+              // HAL_GPIO_WritePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin, GPIO_PIN_SET);
+              // Using osDelay since we're in CMSIS-RTOS2
+              // osDelay(1000);
+              // HAL_GPIO_WritePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin, GPIO_PIN_RESET);
+
+              printfDma("State changed to R2D_MODE\n");
+            }
             break;
 
         case IT_SC_IN_Pin:
-            printfDma("TRIGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGERRED\n");
+            // No debounce for safety critical SC input
+            // SC input: Any state -> TS_INACTIVE and illuminate SC light immediately
+            vcuState = TS_INACTIVE;
+            // TODO: Critical fault handling
+            HAL_GPIO_WritePin(DO_SC_LIGHT_GPIO_Port, DO_SC_LIGHT_Pin, GPIO_PIN_SET);
+            printfDma("SC triggered, state changed to TS_INACTIVE\n");
             break;
 
         default:
@@ -813,7 +857,9 @@ void t_main_func(void *argument)
     /* Infinite loop */
     for(;;)
     {
-        osDelay(1);
+        osDelay(1000);
+
+        HAL_GPIO_TogglePin(DO_SC_RELAY_GPIO_Port, DO_SC_RELAY_Pin);
 
         switch (vcuState)
         {
@@ -837,8 +883,6 @@ void t_main_func(void *argument)
 void t_faultHandler_func(void *argument)
 {
   /* USER CODE BEGIN t_faultHandler_func */
-
-
     for(;;)
     {
 
@@ -857,7 +901,7 @@ void t_faultHandler_func(void *argument)
 /* USER CODE END Header_t_logging_func */
 void t_logging_func(void *argument)
 {
-    /* USER CODE BEGIN t_logging_func */
+  /* USER CODE BEGIN t_logging_func */
 
     osDelay(500); // Startup delay
 
@@ -971,7 +1015,7 @@ void t_logging_func(void *argument)
     //        HAL_GPIO_TogglePin(DO_SC_LIGHT_GPIO_Port,  DO_SC_LIGHT_Pin);
 
     //        fr = fr + 1;
-    /* USER CODE END t_logging_func */
+  /* USER CODE END t_logging_func */
 }
 
 /**

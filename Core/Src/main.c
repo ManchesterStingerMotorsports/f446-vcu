@@ -81,14 +81,14 @@ osThreadId_t t_faultHandlerHandle;
 const osThreadAttr_t t_faultHandler_attributes = {
   .name = "t_faultHandler",
   .stack_size = 512 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+  .priority = (osPriority_t) osPriorityHigh,
 };
 /* Definitions for t_uart */
 osThreadId_t t_uartHandle;
 const osThreadAttr_t t_uart_attributes = {
   .name = "t_uart",
   .stack_size = 512 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+  .priority = (osPriority_t) osPriorityAboveNormal,
 };
 /* Definitions for t_logging */
 osThreadId_t t_loggingHandle;
@@ -102,7 +102,7 @@ osThreadId_t t_canHandle;
 const osThreadAttr_t t_can_attributes = {
   .name = "t_can",
   .stack_size = 512 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+  .priority = (osPriority_t) osPriorityAboveNormal,
 };
 /* Definitions for q_printf */
 osMessageQueueId_t q_printfHandle;
@@ -118,6 +118,11 @@ const osMessageQueueAttr_t q_can1Tx_attributes = {
 osMessageQueueId_t q_can2TxHandle;
 const osMessageQueueAttr_t q_can2Tx_attributes = {
   .name = "q_can2Tx"
+};
+/* Definitions for tim_invrtrCmd */
+osTimerId_t tim_invrtrCmdHandle;
+const osTimerAttr_t tim_invrtrCmd_attributes = {
+  .name = "tim_invrtrCmd"
 };
 /* USER CODE BEGIN PV */
 
@@ -138,6 +143,7 @@ void t_faultHandler_func(void *argument);
 extern void t_uart_func(void *argument);
 void t_logging_func(void *argument);
 extern void t_can_func(void *argument);
+void invrtrCmd_Callback(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -154,15 +160,16 @@ typedef enum
     R2D_MODE,
 } VcuState;
 
-VcuState currVcuState = TS_INACTIVE;
-VcuState prevVcuState = TS_INACTIVE;
-
+volatile VcuState currVcuState = TS_INACTIVE;
+volatile VcuState prevVcuState = TS_INACTIVE;
 
 uint16_t adc1Buff[ADC_BUF_LEN]; // buffer to store values read from adc1
 uint16_t volatile apps1Avg = 0;
 uint16_t volatile apps2Avg = 0;
 uint16_t volatile bpsAvg = 0;
 
+volatile bool faultNormCleared = true;
+volatile bool faultCritCleared = true;
 
 bool isCardDetected = true;
 bool detectCard(void)
@@ -237,6 +244,10 @@ int main(void)
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
   /* USER CODE END RTOS_SEMAPHORES */
+
+  /* Create the timer(s) */
+  /* creation of tim_invrtrCmd */
+  tim_invrtrCmdHandle = osTimerNew(invrtrCmd_Callback, osTimerPeriodic, NULL, &tim_invrtrCmd_attributes);
 
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
@@ -699,11 +710,11 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(SD_CARD_DETECT_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : IT_SC_IN_Pin */
-  GPIO_InitStruct.Pin = IT_SC_IN_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  /*Configure GPIO pin : SC_IN_Pin */
+  GPIO_InitStruct.Pin = SC_IN_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  HAL_GPIO_Init(IT_SC_IN_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(SC_IN_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI4_IRQn, 5, 0);
@@ -718,68 +729,34 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
-#define DEBOUNCE_DELAY 100 // 100 ms debounce delay
+bool buttonPressed_TS = false;
+bool buttonPressed_R2D = false;
 int interruptCount = 0;
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     uint32_t currentTime = HAL_GetTick();
 
+    const uint32_t DEBOUNCE_DELAY = 100;
     static uint32_t lastDebounceTime_TS = 0;
     static uint32_t lastDebounceTime_R2D = 0;
-    static uint32_t lastDebounceTime_SC = 0;
 
     switch (GPIO_Pin)
     {
         case IT_TS_BUTTON_Pin:
-
             // Debounce check
             if (currentTime - lastDebounceTime_TS < DEBOUNCE_DELAY) break;
             lastDebounceTime_TS = currentTime;
-
-            // TS button: TS_INACTIVE -> TS_ACTIVE
-//            if (currVcuState == TS_INACTIVE)
-            {
-//                currVcuState = TS_ACTIVE;
-                HAL_GPIO_TogglePin(DO_R2D_LIGHT_GPIO_Port, DO_R2D_LIGHT_Pin);
-                printfDma("TS Button pressed\n");
-            }
+            buttonPressed_TS = true;
+            printfDma("TS Button pressed\n");
             break;
 
         case IT_R2D_BUTTON_Pin:
-
             // Debounce check
             if (currentTime - lastDebounceTime_R2D < DEBOUNCE_DELAY) break;
             lastDebounceTime_R2D = currentTime;
-
-            // R2D button: TS_ACTIVE -> R2D_MODE only
-//            if (currVcuState == TS_ACTIVE)
-            {
-//                currVcuState = R2D_MODE;
-                // TODO: R2D Transition
-
-                // Sound R2D buzzer for 1 second
-                // HAL_GPIO_WritePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin, GPIO_PIN_SET);
-                // Using osDelay since we're in CMSIS-RTOS2
-                // osDelay(1000);
-                // HAL_GPIO_WritePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin, GPIO_PIN_RESET);
-
-                HAL_GPIO_TogglePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin);
-                printfDma("R2D Button pressed\n");
-            }
-            break;
-
-        case IT_SC_IN_Pin:
-            // No debounce for safety critical SC input
-            // SC input: Any state -> TS_INACTIVE and illuminate SC light immediately
-//            currVcuState = TS_INACTIVE;
-            if (currentTime - lastDebounceTime_SC < DEBOUNCE_DELAY) break;
-            lastDebounceTime_SC = currentTime;
-
-            // TODO: Critical fault handling
-            HAL_GPIO_TogglePin(DO_SC_LIGHT_GPIO_Port, DO_SC_LIGHT_Pin);
-            HAL_GPIO_TogglePin(DO_SC_RELAY_GPIO_Port, DO_SC_RELAY_Pin);
-            printfDma("SC triggered \n");
+            buttonPressed_R2D = true;
+            printfDma("R2D Button pressed\n");
             break;
 
         default:
@@ -886,71 +863,103 @@ float apps1Scaled = 0.0;
 void t_main_func(void *argument)
 {
   /* USER CODE BEGIN 5 */
-
-    int canCounter = 0;
+    uint32_t r2dTimer = 0;
+    const uint32_t R2D_PERIOD = 2000;
+    const uint32_t INVRTR_PERIOD = 10;
 
     /* Infinite loop */
     for(;;)
     {
-
-        const uint32_t maxErpm = 50000;
-        apps1Scaled = (float) apps1Avg / 4095.0;
-
-        if (apps1Scaled > 0.80)
-        {
-            invrtr.setErpm = (uint32_t) (1.0 * maxErpm);
-        }
-        else if (apps1Scaled > 0.20)
-        {
-            invrtr.setErpm = (uint32_t) (apps1Scaled * maxErpm);
-        }
-        else
-        {
-            invrtr.setErpm = 0;
-        }
-
-        inverter_setERPM((uint32_t) invrtr.setErpm);
-        inverter_setDriveEnable(1);
-
-
-        const uint32_t cmdID = 0x20;
-        uint32_t id = ((uint32_t)cmdID << 8) | 0x20;
-        bool isExtId = true;
-
-        canCounter++;
-        uint8_t data[8] = {0};
-        data[6] = canCounter >> 8;
-        data[7] = canCounter;
-        // invrtr.inputVoltage = ((int16_t)data[6] << 8) | data[7];
-        can2_sendMsg(id, isExtId, data, sizeof(data));
-
-
-
-        // State transition check
-        if (currVcuState != prevVcuState)
-        {
-
-        }
-
-        // State functionalities
+        // State transition checks
         switch (currVcuState)
         {
         case TS_INACTIVE:
+            if (buttonPressed_TS && faultCritCleared)
+            {
+                currVcuState = TS_ACTIVE;
+            }
             break;
 
         case TS_ACTIVE:
+            if (buttonPressed_TS)
+            {
+                currVcuState = TS_INACTIVE;
+                break;
+            }
+            if (buttonPressed_R2D && faultNormCleared)
+            {
+                currVcuState = R2D_TRANSITION;
+                break;
+            }
             break;
 
         case R2D_TRANSITION:
+            if (buttonPressed_R2D)
+            {
+                currVcuState = TS_ACTIVE;
+                break;
+            }
+            if (HAL_GetTick() - r2dTimer > R2D_PERIOD)
+            {
+                currVcuState = R2D_MODE;
+            }
             break;
 
         case R2D_MODE:
+            if (buttonPressed_R2D)
+            {
+                currVcuState = TS_ACTIVE;
+                break;
+            }
             break;
 
         default:
             break;
         }
 
+        // State transitions
+        if (currVcuState != prevVcuState)
+        {
+            switch (currVcuState)
+            {
+            case TS_INACTIVE:
+                HAL_GPIO_WritePin(DO_SC_RELAY_GPIO_Port,  DO_SC_RELAY_Pin,  0);
+                HAL_GPIO_WritePin(DO_R2D_LIGHT_GPIO_Port, DO_R2D_LIGHT_Pin, 0);
+                HAL_GPIO_WritePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin, 0);
+                osTimerStop(tim_invrtrCmdHandle);
+                break;
+
+            case TS_ACTIVE:
+                HAL_GPIO_WritePin(DO_SC_RELAY_GPIO_Port,  DO_SC_RELAY_Pin,  1);
+                HAL_GPIO_WritePin(DO_R2D_LIGHT_GPIO_Port, DO_R2D_LIGHT_Pin, 0);
+                HAL_GPIO_WritePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin, 0);
+                osTimerStop(tim_invrtrCmdHandle);
+                break;
+
+            case R2D_TRANSITION:
+                HAL_GPIO_WritePin(DO_SC_RELAY_GPIO_Port,  DO_SC_RELAY_Pin,  1);
+                HAL_GPIO_WritePin(DO_R2D_LIGHT_GPIO_Port, DO_R2D_LIGHT_Pin, 1);
+                HAL_GPIO_WritePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin, 1);
+                osTimerStop(tim_invrtrCmdHandle);
+                r2dTimer = HAL_GetTick();
+                break;
+
+            case R2D_MODE:
+                HAL_GPIO_WritePin(DO_SC_RELAY_GPIO_Port,  DO_SC_RELAY_Pin,  1);
+                HAL_GPIO_WritePin(DO_R2D_LIGHT_GPIO_Port, DO_R2D_LIGHT_Pin, 1);
+                HAL_GPIO_WritePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin, 0);
+                osTimerStart(tim_invrtrCmdHandle, INVRTR_PERIOD);
+                break;
+
+            default:
+                break;
+            }
+        }
+
+        buttonPressed_R2D = false;
+        buttonPressed_TS = false;
+
+        prevVcuState = currVcuState;
         osDelay(10);
     }
   /* USER CODE END 5 */
@@ -966,10 +975,35 @@ void t_main_func(void *argument)
 void t_faultHandler_func(void *argument)
 {
   /* USER CODE BEGIN t_faultHandler_func */
+    volatile bool checkFaultNormOK;
+    volatile bool checkFaultCritOK;
+
     for(;;)
     {
+        checkFaultNormOK = true;
+        checkFaultCritOK = true;
+
+        if (HAL_GPIO_ReadPin(SC_IN_GPIO_Port, SC_IN_Pin))
+        {
+            HAL_GPIO_WritePin(DO_SC_LIGHT_GPIO_Port, DO_SC_LIGHT_Pin, 1);
+        }
+        else
+        {
+            HAL_GPIO_WritePin(DO_SC_LIGHT_GPIO_Port, DO_SC_LIGHT_Pin, 0);
+            checkFaultCritOK = false;
+        }
+
+        // TODO: APPS Plausibility check
+        if (false)
+        {
+            checkFaultNormOK = false;
+        }
+
+        faultNormCleared = checkFaultNormOK;
+        faultCritCleared = checkFaultCritOK;
+
         HAL_GPIO_TogglePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin);
-        osDelay(500);
+        osDelay(5);
     }
 
   /* USER CODE END t_faultHandler_func */
@@ -1073,6 +1107,43 @@ void t_logging_func(void *argument)
 
     //        fr = fr + 1;
   /* USER CODE END t_logging_func */
+}
+
+/* invrtrCmd_Callback function */
+void invrtrCmd_Callback(void *argument)
+{
+  /* USER CODE BEGIN invrtrCmd_Callback */
+    const uint32_t maxErpm = 50000;
+    apps1Scaled = (float) apps1Avg / 4095.0;
+
+    if (apps1Scaled > 0.80)
+    {
+        invrtr.setErpm = (uint32_t) (1.0 * maxErpm);
+    }
+    else if (apps1Scaled > 0.20)
+    {
+        invrtr.setErpm = (uint32_t) (apps1Scaled * maxErpm);
+    }
+    else
+    {
+        invrtr.setErpm = 0;
+    }
+
+    inverter_setERPM((uint32_t) invrtr.setErpm);
+    inverter_setDriveEnable(1);
+
+    const uint32_t cmdID = 0x20;
+    uint32_t id = ((uint32_t)cmdID << 8) | 0x20;
+    bool isExtId = true;
+
+    static int canCounter = 0;
+    canCounter++;
+    uint8_t data[8] = {0};
+    data[6] = canCounter >> 8;
+    data[7] = canCounter;
+    // invrtr.inputVoltage = ((int16_t)data[6] << 8) | data[7];
+    can2_sendMsg(id, isExtId, data, sizeof(data));
+  /* USER CODE END invrtrCmd_Callback */
 }
 
 /**

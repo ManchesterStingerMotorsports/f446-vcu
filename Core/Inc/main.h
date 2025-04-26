@@ -101,9 +101,8 @@ void Error_Handler(void);
 #define SWCLK_GPIO_Port GPIOA
 #define SWO_Pin GPIO_PIN_3
 #define SWO_GPIO_Port GPIOB
-#define IT_SC_IN_Pin GPIO_PIN_6
-#define IT_SC_IN_GPIO_Port GPIOB
-#define IT_SC_IN_EXTI_IRQn EXTI9_5_IRQn
+#define SC_IN_Pin GPIO_PIN_6
+#define SC_IN_GPIO_Port GPIOB
 #define DO_SC_RELAY_Pin GPIO_PIN_7
 #define DO_SC_RELAY_GPIO_Port GPIOB
 

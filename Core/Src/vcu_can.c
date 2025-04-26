@@ -168,7 +168,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
         Error_Handler();
     }
 
-    printfDma("FIFO0: %d, ", rxHeader.FilterMatchIndex);
+//    printfDma("FIFO0: %d, ", rxHeader.FilterMatchIndex);
 //    can_uartHexDump(&rxHeader, rxData); // Dumps the raw CAN message to UART
 
     if (rxHeader.FilterMatchIndex == 0) // If filter matches inverter CAN IDs
@@ -207,8 +207,8 @@ void HAL_CAN_RxFifo1MsgPendingCallback(CAN_HandleTypeDef *hcan)
         Error_Handler();
     }
 
-    printfDma("FIFO1: %d, ", rxHeader.FilterMatchIndex);
-    can_uartHexDump(&rxHeader, rxData); // Dumps the raw CAN message to UART
+//    printfDma("FIFO1: %d, ", rxHeader.FilterMatchIndex);
+//    can_uartHexDump(&rxHeader, rxData); // Dumps the raw CAN message to UART
 
     // Data packet that dont match any filter goes here
     if (hcan == &hcan1)
@@ -264,7 +264,8 @@ HAL_StatusTypeDef can1_sendMsg(uint32_t id, bool isExtId, uint8_t* data, uint8_t
 
     if (status == HAL_BUSY) // If txMailbox full
     {
-        printfDma("ERR: TxMailbox1 Full (Data Loss) \n");
+        // TODO: TX Full Handling
+//        printfDma("ERR: TxMailbox1 Full (Data Loss) \n");
     }
 
     return status;
@@ -276,7 +277,8 @@ HAL_StatusTypeDef can2_sendMsg(uint32_t id, bool isExtId, uint8_t* data, uint8_t
 
     if (status == HAL_BUSY) // If txMailbox full
     {
-        printfDma("ERR: TxMailbox2 Full (Data Loss) \n");
+        // TODO: TX Full Handling
+//        printfDma("ERR: TxMailbox2 Full (Data Loss) \n");
     }
 
     return status;

@@ -132,10 +132,12 @@ typedef enum
 {
     TS_INACTIVE,
     TS_ACTIVE,
+    R2D_TRANSITION,
     R2D_MODE,
 } VcuState;
 
-VcuState vcuState = TS_INACTIVE;
+VcuState currVcuState = TS_INACTIVE;
+VcuState prevVcuState = TS_INACTIVE;
 
 
 uint16_t adc1Buff[ADC_BUF_LEN]; // buffer to store values read from adc1
@@ -648,13 +650,13 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin : IT_TS_BUTTON_Pin */
   GPIO_InitStruct.Pin = IT_TS_BUTTON_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(IT_TS_BUTTON_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : IT_R2D_BUTTON_Pin */
   GPIO_InitStruct.Pin = IT_R2D_BUTTON_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(IT_R2D_BUTTON_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : DO_R2D_SOUND_Pin DO_R2D_LIGHT_Pin DO_SC_LIGHT_Pin DO_SC_RELAY_Pin */
@@ -673,7 +675,7 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin : IT_SC_IN_Pin */
   GPIO_InitStruct.Pin = IT_SC_IN_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(IT_SC_IN_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
@@ -689,79 +691,75 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
-volatile uint32_t lastDebounceTime_TS = 0;
-volatile uint32_t lastDebounceTime_R2D = 0;
-volatile uint32_t lastDebounceTime_SC = 0;
-#define DEBOUNCE_DELAY 500 // 500 ms debounce delay
-int count = 0;
+#define DEBOUNCE_DELAY 100 // 100 ms debounce delay
+int interruptCount = 0;
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     uint32_t currentTime = HAL_GetTick();
 
+    static uint32_t lastDebounceTime_TS = 0;
+    static uint32_t lastDebounceTime_R2D = 0;
+    static uint32_t lastDebounceTime_SC = 0;
+
     switch (GPIO_Pin)
     {
         case IT_TS_BUTTON_Pin:
-            HAL_GPIO_WritePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin, GPIO_PIN_RESET);
-            HAL_GPIO_TogglePin(DO_SC_RELAY_GPIO_Port, DO_SC_RELAY_Pin);
 
             // Debounce check
-            if (currentTime - lastDebounceTime_TS < DEBOUNCE_DELAY)
-              return;
-
+            if (currentTime - lastDebounceTime_TS < DEBOUNCE_DELAY) break;
             lastDebounceTime_TS = currentTime;
 
             // TS button: TS_INACTIVE -> TS_ACTIVE
-            if (vcuState == TS_INACTIVE)
+//            if (currVcuState == TS_INACTIVE)
             {
-                vcuState = TS_ACTIVE;
-        
-                printfDma("State changed to TS_ACTIVE\n");
+//                currVcuState = TS_ACTIVE;
+                HAL_GPIO_TogglePin(DO_R2D_LIGHT_GPIO_Port, DO_R2D_LIGHT_Pin);
+                printfDma("TS Button pressed\n");
             }
-        break;
+            break;
 
         case IT_R2D_BUTTON_Pin:
-            HAL_GPIO_WritePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin, GPIO_PIN_SET);
-            // Debounce check
-            if (currentTime - lastDebounceTime_R2D < DEBOUNCE_DELAY)
-                return;
 
+            // Debounce check
+            if (currentTime - lastDebounceTime_R2D < DEBOUNCE_DELAY) break;
             lastDebounceTime_R2D = currentTime;
 
             // R2D button: TS_ACTIVE -> R2D_MODE only
-            if (vcuState == TS_ACTIVE)
+//            if (currVcuState == TS_ACTIVE)
             {
-              vcuState = R2D_MODE;
-              // TODO: R2D Transition
+//                currVcuState = R2D_MODE;
+                // TODO: R2D Transition
 
-              // Sound R2D buzzer for 1 second
-              // HAL_GPIO_WritePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin, GPIO_PIN_SET);
-              // Using osDelay since we're in CMSIS-RTOS2
-              // osDelay(1000);
-              // HAL_GPIO_WritePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin, GPIO_PIN_RESET);
+                // Sound R2D buzzer for 1 second
+                // HAL_GPIO_WritePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin, GPIO_PIN_SET);
+                // Using osDelay since we're in CMSIS-RTOS2
+                // osDelay(1000);
+                // HAL_GPIO_WritePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin, GPIO_PIN_RESET);
 
-              printfDma("State changed to R2D_MODE\n");
+                HAL_GPIO_TogglePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin);
+                printfDma("R2D Button pressed\n");
             }
             break;
 
         case IT_SC_IN_Pin:
             // No debounce for safety critical SC input
             // SC input: Any state -> TS_INACTIVE and illuminate SC light immediately
-            vcuState = TS_INACTIVE;
+//            currVcuState = TS_INACTIVE;
+            if (currentTime - lastDebounceTime_SC < DEBOUNCE_DELAY) break;
+            lastDebounceTime_SC = currentTime;
+
             // TODO: Critical fault handling
-            HAL_GPIO_WritePin(DO_SC_LIGHT_GPIO_Port, DO_SC_LIGHT_Pin, GPIO_PIN_SET);
-            printfDma("SC triggered, state changed to TS_INACTIVE\n");
+            HAL_GPIO_TogglePin(DO_SC_LIGHT_GPIO_Port, DO_SC_LIGHT_Pin);
+            HAL_GPIO_TogglePin(DO_SC_RELAY_GPIO_Port, DO_SC_RELAY_Pin);
+            printfDma("SC triggered \n");
             break;
 
         default:
-            count++;
             break;
     }
 
-//    if(GPIO_Pin == SD_CARD_DETECT_Pin) // If The INT Source Is EXTI Line9 (A9 Pin)
-//    {
-//        count++;
-//    }
+    interruptCount++;
 }
 
 uint32_t prevTime = 0;
@@ -812,8 +810,8 @@ void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
             sum3 += adc1Buff[i+2];
         }
         bpsAvg   = sum1 / (ADC_BUF_LEN/6);
-        apps1Avg = sum2 / (ADC_BUF_LEN/6);
-        apps2Avg = sum3 / (ADC_BUF_LEN/6);
+        apps2Avg = sum2 / (ADC_BUF_LEN/6);
+        apps1Avg = sum3 / (ADC_BUF_LEN/6);
     }
 }
 
@@ -834,8 +832,8 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
             sum3 += adc1Buff[i+2];
         }
         bpsAvg   = sum1 / (ADC_BUF_LEN/6);
-        apps1Avg = sum2 / (ADC_BUF_LEN/6);
-        apps2Avg = sum3 / (ADC_BUF_LEN/6);
+        apps2Avg = sum2 / (ADC_BUF_LEN/6);
+        apps1Avg = sum3 / (ADC_BUF_LEN/6);
     }
 }
 
@@ -854,21 +852,71 @@ void t_main_func(void *argument)
 {
   /* USER CODE BEGIN 5 */
 
+    int canCounter = 0;
+
     /* Infinite loop */
     for(;;)
     {
-        osDelay(1000);
 
-        HAL_GPIO_TogglePin(DO_SC_RELAY_GPIO_Port, DO_SC_RELAY_Pin);
+        const uint32_t maxErpm = 50000;
+        apps1Scaled = (float) apps1Avg / 4095.0;
 
-        switch (vcuState)
+        if (apps1Scaled > 0.80)
+        {
+            invrtr.setErpm = (uint32_t) (1.0 * maxErpm);
+        }
+        else if (apps1Scaled > 0.20)
+        {
+            invrtr.setErpm = (uint32_t) (apps1Scaled * maxErpm);
+        }
+        else
+        {
+            invrtr.setErpm = 0;
+        }
+
+        inverter_setERPM((uint32_t) invrtr.setErpm);
+        inverter_setDriveEnable(1);
+
+
+        const uint32_t cmdID = 0x20;
+        uint32_t id = ((uint32_t)cmdID << 8) | 0x20;
+        bool isExtId = true;
+
+        canCounter++;
+        uint8_t data[8] = {0};
+        data[6] = canCounter >> 8;
+        data[7] = canCounter;
+        // invrtr.inputVoltage = ((int16_t)data[6] << 8) | data[7];
+        can2_sendMsg(id, isExtId, data, sizeof(data));
+
+
+
+        // State transition check
+        if (currVcuState != prevVcuState)
+        {
+
+        }
+
+        // State functionalities
+        switch (currVcuState)
         {
         case TS_INACTIVE:
+            break;
+
+        case TS_ACTIVE:
+            break;
+
+        case R2D_TRANSITION:
+            break;
+
+        case R2D_MODE:
             break;
 
         default:
             break;
         }
+
+        osDelay(10);
     }
   /* USER CODE END 5 */
 }
@@ -885,7 +933,7 @@ void t_faultHandler_func(void *argument)
   /* USER CODE BEGIN t_faultHandler_func */
     for(;;)
     {
-
+        HAL_GPIO_TogglePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin);
         osDelay(500);
     }
 
@@ -972,32 +1020,6 @@ void t_logging_func(void *argument)
 //        HAL_GPIO_TogglePin(DO_SC_LIGHT_GPIO_Port,  DO_SC_LIGHT_Pin);
 
 //        fr = fr + 1;
-
-        const uint32_t maxErpm = 50000;
-        apps1Scaled = (float) apps1Avg / 4095.0;
-
-        if (apps1Scaled > 0.80)
-        {
-            invrtr.setErpm = (uint32_t) (1.0 * maxErpm);
-        }
-        else if (apps1Scaled > 0.20)
-        {
-            invrtr.setErpm = (uint32_t) (apps1Scaled * maxErpm);
-        }
-        else
-        {
-            invrtr.setErpm = 0;
-        }
-
-
-        inverter_setERPM((uint32_t) invrtr.setErpm);
-        inverter_setDriveEnable(1);
-
-//        uint32_t id = 0x69;
-//        bool isExtId = false;
-//        uint8_t data[8] = {0xEF, 0xBE, 0xAD, 0xDE, 0xEF, 0xBE, 0xAD, 0xDE};
-//
-//        can1_sendMsg(id, isExtId, data, sizeof(data));
 
 //        printfDma("%f %f %f \n", fr, fr, fr);
 //        printfDma("                           \n");

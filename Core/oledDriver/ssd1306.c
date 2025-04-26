@@ -70,7 +70,12 @@ uint8_t ssd1306_Init(void)
   }
 
   // Wait for the screen to boot
-  HAL_Delay(100);
+  static bool firstBoot = true;
+  if (firstBoot == true)
+  {
+      osDelay(100);
+      firstBoot = false;
+  }
 
   /* Init LCD */
   ssd1306_WriteCommand(DISPLAYOFF);

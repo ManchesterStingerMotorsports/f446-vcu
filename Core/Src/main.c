@@ -97,10 +97,27 @@ const osThreadAttr_t t_logging_attributes = {
   .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
+/* Definitions for t_can */
+osThreadId_t t_canHandle;
+const osThreadAttr_t t_can_attributes = {
+  .name = "t_can",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
 /* Definitions for q_printf */
 osMessageQueueId_t q_printfHandle;
 const osMessageQueueAttr_t q_printf_attributes = {
   .name = "q_printf"
+};
+/* Definitions for q_can1Tx */
+osMessageQueueId_t q_can1TxHandle;
+const osMessageQueueAttr_t q_can1Tx_attributes = {
+  .name = "q_can1Tx"
+};
+/* Definitions for q_can2Tx */
+osMessageQueueId_t q_can2TxHandle;
+const osMessageQueueAttr_t q_can2Tx_attributes = {
+  .name = "q_can2Tx"
 };
 /* USER CODE BEGIN PV */
 
@@ -120,6 +137,7 @@ void t_main_func(void *argument);
 void t_faultHandler_func(void *argument);
 extern void t_uart_func(void *argument);
 void t_logging_func(void *argument);
+extern void t_can_func(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -228,6 +246,12 @@ int main(void)
   /* creation of q_printf */
   q_printfHandle = osMessageQueueNew (16, sizeof(printfString_t), &q_printf_attributes);
 
+  /* creation of q_can1Tx */
+  q_can1TxHandle = osMessageQueueNew (16, sizeof(CanTxMsg), &q_can1Tx_attributes);
+
+  /* creation of q_can2Tx */
+  q_can2TxHandle = osMessageQueueNew (16, sizeof(CanTxMsg), &q_can2Tx_attributes);
+
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
@@ -244,6 +268,9 @@ int main(void)
 
   /* creation of t_logging */
   t_loggingHandle = osThreadNew(t_logging_func, NULL, &t_logging_attributes);
+
+  /* creation of t_can */
+  t_canHandle = osThreadNew(t_can_func, NULL, &t_can_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */

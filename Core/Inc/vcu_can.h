@@ -10,6 +10,14 @@
 
 #include "main.h"
 
+typedef struct
+{
+    uint8_t data[8];
+    CAN_TxHeaderTypeDef header;
+} CanTxMsg;
+
+
+
 void can_setup(void);
 
 void can_uartHexDump(CAN_RxHeaderTypeDef *rxHeader, uint8_t rxData[static 1]);

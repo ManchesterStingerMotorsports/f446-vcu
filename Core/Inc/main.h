@@ -41,6 +41,9 @@ extern "C" {
 
 extern CAN_HandleTypeDef hcan1;
 extern CAN_HandleTypeDef hcan2;
+extern osMessageQueueId_t q_can1TxHandle;
+extern osMessageQueueId_t q_can2TxHandle;
+extern osThreadId_t t_canHandle;
 
 extern UART_HandleTypeDef huart2;
 extern osMessageQueueId_t q_printfHandle;

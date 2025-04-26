@@ -11,6 +11,7 @@
 #include "inverter.h"
 
 #include <stdio.h>
+#include <string.h>
 
 
 void can_setup(void)
@@ -215,13 +216,13 @@ void HAL_CAN_RxFifo1MsgPendingCallback(CAN_HandleTypeDef *hcan)
     {
 
     }
-
 }
+
 
 HAL_StatusTypeDef can_sendMsg(CAN_HandleTypeDef *hcan, uint32_t id, bool isExtId, uint8_t* data, uint8_t dlc)
 {
     CAN_TxHeaderTypeDef txHeader;
-    uint32_t txMailbox;             // Stores which Tx Mailbox is used
+//    uint32_t txMailbox;             // Stores which Tx Mailbox is used
 
     txHeader.RTR = CAN_RTR_DATA;
     txHeader.DLC = dlc;
@@ -239,20 +240,31 @@ HAL_StatusTypeDef can_sendMsg(CAN_HandleTypeDef *hcan, uint32_t id, bool isExtId
 
     HAL_StatusTypeDef status;
 
-    if (HAL_CAN_GetTxMailboxesFreeLevel(hcan))
-    {
-        status = HAL_CAN_AddTxMessage(hcan, &txHeader, data, &txMailbox);
+    CanTxMsg canMsg;
+    canMsg.header = txHeader;
+    memcpy(canMsg.data, data, txHeader.DLC);
 
-        if (status != HAL_OK)
+
+    if (hcan == &hcan1)
+    {
+        if (osMessageQueuePut(q_can1TxHandle, &canMsg, 0, 0) != osOK)
         {
-            // CAN peripheral tx error
-            Error_Handler();
+            status = HAL_BUSY;
+        }
+    }
+    else if (hcan == &hcan2)
+    {
+        if (osMessageQueuePut(q_can2TxHandle, &canMsg, 0, 0) != osOK)
+        {
+            status = HAL_BUSY;
         }
     }
     else
     {
-        status = HAL_BUSY;
+        // Invalid can peripheral
+        Error_Handler();
     }
+
 
     return status;
 }
@@ -282,6 +294,55 @@ HAL_StatusTypeDef can2_sendMsg(uint32_t id, bool isExtId, uint8_t* data, uint8_t
     }
 
     return status;
+}
+
+
+void t_can_func(void *argument)
+{
+    CanTxMsg canMsg;
+
+    for(;;)
+    {
+
+        uint32_t mb1;                // Stores last Tx Mailbox used
+        uint32_t mb2;                // Stores last Tx Mailbox used
+
+        while (osMessageQueueGetCount(q_can1TxHandle) && HAL_CAN_GetTxMailboxesFreeLevel(&hcan1))
+        {
+            if (osMessageQueueGet(q_can1TxHandle, &canMsg, NULL, 0) == osOK)
+            {
+                if (HAL_CAN_AddTxMessage(&hcan1, &canMsg.header, canMsg.data, &mb1) != HAL_OK)
+                {
+                    // CAN peripheral tx error
+                    Error_Handler();
+                }
+            }
+            else
+            {
+                // Queue Empty
+                Error_Handler();
+            }
+        }
+
+        while (osMessageQueueGetCount(q_can2TxHandle) && HAL_CAN_GetTxMailboxesFreeLevel(&hcan2))
+        {
+            if (osMessageQueueGet(q_can2TxHandle, &canMsg, NULL, 0) == osOK)
+            {
+                if (HAL_CAN_AddTxMessage(&hcan2, &canMsg.header, canMsg.data, &mb2) != HAL_OK)
+                {
+                    // CAN peripheral tx error
+                    Error_Handler();
+                }
+            }
+            else
+            {
+                // Queue Empty
+                Error_Handler();
+            }
+        }
+
+        osDelay(2);
+    }
 }
 
 

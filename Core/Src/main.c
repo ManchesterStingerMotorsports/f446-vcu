@@ -809,9 +809,13 @@ void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
             sum2 += adc1Buff[i+1];
             sum3 += adc1Buff[i+2];
         }
-        bpsAvg   = sum1 / (ADC_BUF_LEN/6);
-        apps2Avg = sum2 / (ADC_BUF_LEN/6);
-        apps1Avg = sum3 / (ADC_BUF_LEN/6);
+
+        // basic Low pass filter
+        float a = 0.8;
+        float b = 0.2;
+        bpsAvg   = bpsAvg   * a + (sum1 / (ADC_BUF_LEN/6)) * b;
+        apps2Avg = apps2Avg * a + (sum2 / (ADC_BUF_LEN/6)) * b;
+        apps1Avg = apps2Avg * a + (sum3 / (ADC_BUF_LEN/6)) * b;
     }
 }
 
@@ -831,9 +835,13 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
             sum2 += adc1Buff[i+1];
             sum3 += adc1Buff[i+2];
         }
-        bpsAvg   = sum1 / (ADC_BUF_LEN/6);
-        apps2Avg = sum2 / (ADC_BUF_LEN/6);
-        apps1Avg = sum3 / (ADC_BUF_LEN/6);
+
+        // basic Low pass filter
+        float a = 0.8;
+        float b = 0.2;
+        bpsAvg   = bpsAvg   * a + (sum1 / (ADC_BUF_LEN/6)) * b;
+        apps2Avg = apps2Avg * a + (sum2 / (ADC_BUF_LEN/6)) * b;
+        apps1Avg = apps2Avg * a + (sum3 / (ADC_BUF_LEN/6)) * b;
     }
 }
 

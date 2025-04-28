@@ -2,9 +2,13 @@
 
 Device responsible of the TS activation logic and R2D mode
 
-![alt text](<docs/3D View.png>)
 
-_The PCB design is still under testing and may change in the future._ 
+![3D Render](<docs/3D View.png>)
+
+
+![Interfaces](<docs/interfaces.png>)
+
+
 
 
 ## Features
@@ -38,12 +42,12 @@ _The PCB design is still under testing and may change in the future._
 - **Transition:** Returns to inactive or active on error or driver command.
 
 
-## Software Design Notes
+## Program Structure
 
-- Using FreeRTOS with CMSIS V2 interface for easy multitasking and timers
-- 
+![tasks](docs/tasks.png)
 
 
+![states](docs/states.png)
 
 
 

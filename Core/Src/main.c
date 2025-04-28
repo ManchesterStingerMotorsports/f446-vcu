@@ -985,11 +985,11 @@ void t_faultHandler_func(void *argument)
 
         if (HAL_GPIO_ReadPin(SC_IN_GPIO_Port, SC_IN_Pin))
         {
-            HAL_GPIO_WritePin(DO_SC_LIGHT_GPIO_Port, DO_SC_LIGHT_Pin, 1);
+            HAL_GPIO_WritePin(DO_SC_LIGHT_GPIO_Port, DO_SC_LIGHT_Pin, 0);
         }
         else
         {
-            HAL_GPIO_WritePin(DO_SC_LIGHT_GPIO_Port, DO_SC_LIGHT_Pin, 0);
+            HAL_GPIO_WritePin(DO_SC_LIGHT_GPIO_Port, DO_SC_LIGHT_Pin, 1);
             checkFaultCritOK = false;
         }
 

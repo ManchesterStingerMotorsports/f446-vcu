@@ -27,6 +27,7 @@
 #include "stdbool.h"
 #include "string.h"
 #include "stdio.h"
+#include "math.h"
 
 #include "uartDMA.h"
 #include "ssd1306.h"
@@ -160,6 +161,16 @@ typedef enum
     R2D_MODE,
 } VcuState;
 
+typedef struct
+{
+    bool APPS1_SCS;
+    bool APPS2_SCS;
+    bool APPS_PB;
+    bool APPS_BPS_PB;
+} VcuErrors;
+
+VcuErrors vcuError;
+
 volatile VcuState currVcuState = TS_INACTIVE;
 volatile VcuState prevVcuState = TS_INACTIVE;
 
@@ -168,15 +179,23 @@ uint16_t volatile apps1Avg = 0;
 uint16_t volatile apps2Avg = 0;
 uint16_t volatile bpsAvg = 0;
 
+float volatile apps1Scaled = 0;
+float volatile apps2Scaled = 0;
+float volatile appsDiff = 0;
+
 volatile bool faultNormCleared = true;
 volatile bool faultCritCleared = true;
 
-bool isCardDetected = true;
-bool detectCard(void)
-{
-    return true;
-    //return HAL_GPIO_ReadPin(SD_CARD_DETECT_GPIO_Port, SD_CARD_DETECT_Pin);
-}
+bool isCardDetected = false;
+
+// 4.5V -> 3686
+// 0.5V -> 410
+
+const uint16_t APPS1_MAX = 3180;
+const uint16_t APPS1_MIN = 420;
+const uint16_t APPS2_MAX = 3520;
+const uint16_t APPS2_MIN = 845;
+
 
 uint8_t BSP_SD_IsDetected(void)
 {
@@ -439,7 +458,7 @@ static void MX_CAN1_Init(void)
 
   /* USER CODE END CAN1_Init 1 */
   hcan1.Instance = CAN1;
-  hcan1.Init.Prescaler = 6;
+  hcan1.Init.Prescaler = 12;
   hcan1.Init.Mode = CAN_MODE_NORMAL;
   hcan1.Init.SyncJumpWidth = CAN_SJW_1TQ;
   hcan1.Init.TimeSeg1 = CAN_BS1_11TQ;
@@ -544,7 +563,7 @@ static void MX_SDIO_SD_Init(void)
   /* USER CODE END SDIO_Init 0 */
 
   /* USER CODE BEGIN SDIO_Init 1 */
-
+  
     hsd.Instance = SDIO;
     hsd.Init.ClockEdge = SDIO_CLOCK_EDGE_RISING;
     hsd.Init.ClockBypass = SDIO_CLOCK_BYPASS_DISABLE;
@@ -571,7 +590,7 @@ static void MX_SDIO_SD_Init(void)
 
 #endif
 
-  if (detectCard())
+  if (BSP_SD_IsDetected())
   {
       if (HAL_SD_Init(&hsd) != HAL_OK)
       {
@@ -581,6 +600,7 @@ static void MX_SDIO_SD_Init(void)
       {
           Error_Handler();
       }
+      isCardDetected = true;
   }
   else
   {
@@ -663,6 +683,7 @@ static void MX_GPIO_Init(void)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
   /* USER CODE BEGIN MX_GPIO_Init_1 */
+
   /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
@@ -724,6 +745,7 @@ static void MX_GPIO_Init(void)
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
+
   /* USER CODE END MX_GPIO_Init_2 */
 }
 
@@ -737,7 +759,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     uint32_t currentTime = HAL_GetTick();
 
-    const uint32_t DEBOUNCE_DELAY = 100;
+    const uint32_t DEBOUNCE_DELAY = 200;
     static uint32_t lastDebounceTime_TS = 0;
     static uint32_t lastDebounceTime_R2D = 0;
 
@@ -791,9 +813,40 @@ void ssd1306_RasterIntCallback(uint8_t r)
     ssd1306_SetCursor(0, 11);
     ssd1306_WriteString(msg, Font_7x10);
 
-    snprintf(msg, 64, "S ERPM:%ld", invrtr.setErpm);
+    char *stateStr;
+    switch (currVcuState)
+    {
+        case TS_INACTIVE:
+            stateStr = "TS OFF";
+            break;
+        case TS_ACTIVE:
+            stateStr = "TS ON";
+            break;
+        case R2D_TRANSITION:
+            stateStr = "R2D BUZ";
+            break;
+        case R2D_MODE:
+            stateStr = "R2D ON";
+            break;
+        default:
+            stateStr = "ERR";
+            break;
+    }
+
+    snprintf(msg, 64, "S ERPM:%ld %s", invrtr.setErpm, stateStr);
     ssd1306_SetCursor(0, 21);
     ssd1306_WriteString(msg, Font_7x10);
+}
+
+
+
+float mapValue(float value, float min_val, float max_val)
+{
+    if (max_val == min_val) return 0.0f; // avoid division by zero
+
+    // TODO: Add clamping
+
+    return ((value - min_val) / (max_val - min_val));
 }
 
 
@@ -814,13 +867,22 @@ void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
             sum3 += adc1Buff[i+2];
         }
 
+        // Invert if needed
+        uint32_t rawBpsAvg   = (sum1 / (ADC_BUF_LEN/6));
+        uint32_t rawApps2Avg = (sum2 / (ADC_BUF_LEN/6));
+        uint32_t rawApps1Avg = (sum3 / (ADC_BUF_LEN/6));
+
         // basic Low pass filter
-        float a = 0.8;
-        float b = 0.2;
-        bpsAvg   = bpsAvg   * a + (sum1 / (ADC_BUF_LEN/6)) * b;
-        apps2Avg = apps2Avg * a + (sum2 / (ADC_BUF_LEN/6)) * b;
-        apps1Avg = apps2Avg * a + (sum3 / (ADC_BUF_LEN/6)) * b;
+        float a = 0.9;
+        float b = 0.1;
+        bpsAvg   = bpsAvg   * a + rawBpsAvg   * b;
+        apps2Avg = apps2Avg * a + rawApps2Avg * b;
+        apps1Avg = apps1Avg * a + rawApps1Avg * b;
     }
+
+    apps1Scaled = 1.0 - mapValue(apps1Avg, APPS1_MIN, APPS1_MAX);
+    apps2Scaled = 1.0 - mapValue(apps2Avg, APPS2_MIN, APPS2_MAX);
+    appsDiff = apps1Scaled - apps2Scaled;
 }
 
 // Called when buffer is completely filled
@@ -840,16 +902,24 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
             sum3 += adc1Buff[i+2];
         }
 
+        // Invert if needed
+        uint32_t rawBpsAvg   = (sum1 / (ADC_BUF_LEN/6));
+        uint32_t rawApps2Avg = (sum2 / (ADC_BUF_LEN/6));
+        uint32_t rawApps1Avg = (sum3 / (ADC_BUF_LEN/6));
+
         // basic Low pass filter
-        float a = 0.8;
-        float b = 0.2;
-        bpsAvg   = bpsAvg   * a + (sum1 / (ADC_BUF_LEN/6)) * b;
-        apps2Avg = apps2Avg * a + (sum2 / (ADC_BUF_LEN/6)) * b;
-        apps1Avg = apps2Avg * a + (sum3 / (ADC_BUF_LEN/6)) * b;
+        float a = 0.9;
+        float b = 0.1;
+        bpsAvg   = bpsAvg   * a + rawBpsAvg   * b;
+        apps2Avg = apps2Avg * a + rawApps2Avg * b;
+        apps1Avg = apps1Avg * a + rawApps1Avg * b;
     }
+
+    apps1Scaled = 1.0 - mapValue(apps1Avg, APPS1_MIN, APPS1_MAX);
+    apps2Scaled = 1.0 - mapValue(apps2Avg, APPS2_MIN, APPS2_MAX);
+    appsDiff = apps1Scaled - apps2Scaled;
 }
 
-float apps1Scaled = 0.0;
 
 /* USER CODE END 4 */
 
@@ -867,9 +937,9 @@ void t_main_func(void *argument)
     const uint32_t R2D_PERIOD = 2000;
     const uint32_t INVRTR_PERIOD = 10;
 
-    /* Infinite loop */
-    for(;;)
-    {
+  /* Infinite loop */
+  for(;;)
+  {
         // State transition checks
         switch (currVcuState)
         {
@@ -923,6 +993,7 @@ void t_main_func(void *argument)
             switch (currVcuState)
             {
             case TS_INACTIVE:
+                printfDma("VCU State Changed: TS Inactive \n");
                 HAL_GPIO_WritePin(DO_SC_RELAY_GPIO_Port,  DO_SC_RELAY_Pin,  0);
                 HAL_GPIO_WritePin(DO_R2D_LIGHT_GPIO_Port, DO_R2D_LIGHT_Pin, 0);
                 HAL_GPIO_WritePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin, 0);
@@ -930,6 +1001,7 @@ void t_main_func(void *argument)
                 break;
 
             case TS_ACTIVE:
+                printfDma("VCU State Changed: TS Active \n");
                 HAL_GPIO_WritePin(DO_SC_RELAY_GPIO_Port,  DO_SC_RELAY_Pin,  1);
                 HAL_GPIO_WritePin(DO_R2D_LIGHT_GPIO_Port, DO_R2D_LIGHT_Pin, 0);
                 HAL_GPIO_WritePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin, 0);
@@ -937,6 +1009,7 @@ void t_main_func(void *argument)
                 break;
 
             case R2D_TRANSITION:
+                printfDma("VCU State Changed: R2D Transition \n");
                 HAL_GPIO_WritePin(DO_SC_RELAY_GPIO_Port,  DO_SC_RELAY_Pin,  1);
                 HAL_GPIO_WritePin(DO_R2D_LIGHT_GPIO_Port, DO_R2D_LIGHT_Pin, 1);
                 HAL_GPIO_WritePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin, 1);
@@ -945,6 +1018,7 @@ void t_main_func(void *argument)
                 break;
 
             case R2D_MODE:
+                printfDma("VCU State Changed: R2D Mode \n");
                 HAL_GPIO_WritePin(DO_SC_RELAY_GPIO_Port,  DO_SC_RELAY_Pin,  1);
                 HAL_GPIO_WritePin(DO_R2D_LIGHT_GPIO_Port, DO_R2D_LIGHT_Pin, 1);
                 HAL_GPIO_WritePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin, 0);
@@ -961,7 +1035,7 @@ void t_main_func(void *argument)
 
         prevVcuState = currVcuState;
         osDelay(10);
-    }
+  }
   /* USER CODE END 5 */
 }
 
@@ -975,14 +1049,21 @@ void t_main_func(void *argument)
 void t_faultHandler_func(void *argument)
 {
   /* USER CODE BEGIN t_faultHandler_func */
+    const uint32_t APPS_PB_PERIOD_MS = 100;
+    static uint32_t lastAppsPbTime = 0;
+    static bool appsPbDetected = false;
+
     volatile bool checkFaultNormOK;
     volatile bool checkFaultCritOK;
 
     for(;;)
     {
+        uint32_t currentTime = HAL_GetTick();
+
         checkFaultNormOK = true;
         checkFaultCritOK = true;
 
+        // Shutdown circuit input detection
         if (HAL_GPIO_ReadPin(SC_IN_GPIO_Port, SC_IN_Pin))
         {
             HAL_GPIO_WritePin(DO_SC_LIGHT_GPIO_Port, DO_SC_LIGHT_Pin, 0);
@@ -993,16 +1074,40 @@ void t_faultHandler_func(void *argument)
             checkFaultCritOK = false;
         }
 
-        // TODO: APPS Plausibility check
-        if (false)
+        // APPS Plausibility check
+        if ((fabsf(appsDiff) < 0.1))
         {
-            checkFaultNormOK = false;
+            appsPbDetected = false;
+            vcuError.APPS_PB = false;
+        }
+        else
+        {
+            if (!appsPbDetected)
+            {
+                lastAppsPbTime = currentTime;
+                appsPbDetected = true;
+            }
+            else if (currentTime - lastAppsPbTime > APPS_PB_PERIOD_MS)
+            {
+                vcuError.APPS_PB = true;
+//                checkFaultNormOK = false;
+            }
+        }
+
+        // TODO: APPS BPS Plausibility check
+        {
+
         }
 
         faultNormCleared = checkFaultNormOK;
         faultCritCleared = checkFaultCritOK;
 
-        HAL_GPIO_TogglePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin);
+        static uint8_t ledCounter = 0;
+        if (ledCounter++ > 50)
+        {
+            HAL_GPIO_TogglePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin);
+            ledCounter = 0;
+        }
         osDelay(5);
     }
 
@@ -1080,9 +1185,9 @@ void t_logging_func(void *argument)
 //    float fr = 0;
 
 
-    /* Infinite loop */
-    for(;;)
-    {
+  /* Infinite loop */
+  for(;;)
+  {
         osDelay(10);
 
 //        HAL_GPIO_TogglePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin);
@@ -1101,7 +1206,7 @@ void t_logging_func(void *argument)
 //        osDelay(241);
 //        HAL_GPIO_TogglePin(DO_SC_LIGHT_GPIO_Port,  DO_SC_LIGHT_Pin);
 //        osDelay(111);
-    }
+  }
 //        _LED_GPIO_Port, DEBUG_LED_Pin);
     //        HAL_GPIO_TogglePin(DO_SC_LIGHT_GPIO_Port,  DO_SC_LIGHT_Pin);
 
@@ -1114,15 +1219,19 @@ void invrtrCmd_Callback(void *argument)
 {
   /* USER CODE BEGIN invrtrCmd_Callback */
     const uint32_t maxErpm = 50000;
-    apps1Scaled = (float) apps1Avg / 4095.0;
-
-    if (apps1Scaled > 0.80)
+    float appsPosition = (apps1Scaled + apps2Scaled) / 2;
+//    apps1Scaled = (float) apps1Avg / 4095.0;
+    if (vcuError.APPS_PB)
+    {
+        invrtr.setErpm = 0;
+    }
+    else if (appsPosition > 0.90)
     {
         invrtr.setErpm = (uint32_t) (1.0 * maxErpm);
     }
-    else if (apps1Scaled > 0.20)
+    else if (appsPosition > 0.1)
     {
-        invrtr.setErpm = (uint32_t) (apps1Scaled * maxErpm);
+        invrtr.setErpm = (uint32_t) (appsPosition * maxErpm);
     }
     else
     {

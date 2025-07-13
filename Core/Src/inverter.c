@@ -173,11 +173,14 @@ void inverter_setPosition(int16_t position)
 
 // Command: Set Relative Current (0x05)
 // Payload: 2 bytes, target relative current percentage (multiplied by 10)
-void inverter_setRelativeCurrent(int16_t relativeCurrent)
+void inverter_setRelativeCurrent(float relativeCurrent)
 {
+    int16_t relativeCurrentRaw = relativeCurrent * 10;
+    invrtr.setRelativeCurrentRaw = relativeCurrentRaw;
+
     uint8_t payload[2];
-    payload[0] = (uint8_t)((uint16_t)relativeCurrent >> 8);
-    payload[1] = (uint8_t)(relativeCurrent & 0xFF);
+    payload[0] = (uint8_t)((uint16_t)relativeCurrentRaw >> 8);
+    payload[1] = (uint8_t)(relativeCurrentRaw & 0xFF);
     if (CAN_SendCommand(CMD_SET_RELATIVE_CURRENT, payload, 2) != HAL_OK)
     {
 //        Error_Handler();
@@ -215,11 +218,14 @@ void inverter_setDigitalOutput(uint8_t digitalOut)
 
 // Command: Set Maximum AC Current (0x08)
 // Payload: 2 bytes, maximum AC current (multiplied by 10)
-void inverter_setMaxACCurrent(int16_t maxACCurrent)
+void inverter_setMaxACCurrent(float maxACCurrent)
 {
+    int16_t maxACCurrentRaw = maxACCurrent * 10;
+    invrtr.setMaxACCurrentRaw = maxACCurrentRaw;
+
     uint8_t payload[2];
-    payload[0] = (uint8_t)((uint16_t)maxACCurrent >> 8);
-    payload[1] = (uint8_t)(maxACCurrent & 0xFF);
+    payload[0] = (uint8_t)((uint16_t)maxACCurrentRaw >> 8);
+    payload[1] = (uint8_t)(maxACCurrentRaw & 0xFF);
     if (CAN_SendCommand(CMD_SET_MAX_AC_CURRENT, payload, 2) != HAL_OK)
     {
 //        Error_Handler();
@@ -241,11 +247,14 @@ void inverter_setMaxBrakeACCurrent(int16_t maxBrakeACCurrent)
 
 // Command: Set Maximum DC Current (0x0A)
 // Payload: 2 bytes, maximum DC current limit (multiplied by 10)
-void inverter_setMaxDCCurrent(int16_t maxDCCurrent)
+void inverter_setMaxDCCurrent(float maxDCCurrent)
 {
+    int16_t maxDCCurrentRaw = maxDCCurrent;
+    invrtr.setMaxDCCurrentRaw = maxDCCurrentRaw;
+
     uint8_t payload[2];
-    payload[0] = (uint8_t)((uint16_t)maxDCCurrent >> 8);
-    payload[1] = (uint8_t)(maxDCCurrent & 0xFF);
+    payload[0] = (uint8_t)((uint16_t)maxDCCurrentRaw >> 8);
+    payload[1] = (uint8_t)(maxDCCurrentRaw & 0xFF);
     if (CAN_SendCommand(CMD_SET_MAX_DC_CURRENT, payload, 2) != HAL_OK)
     {
 //        Error_Handler();

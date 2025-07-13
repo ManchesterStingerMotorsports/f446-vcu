@@ -63,14 +63,19 @@ typedef struct
     uint8_t dout4;
 
     // --- Command Variables --- //
-    int32_t setErpm;
+    int32_t setErpm;                    // x1
 
+    float   setRelativeCurrent;
+    int16_t setRelativeCurrentRaw;      // x10
+
+    float   setMaxACCurrent;
+    int16_t setMaxACCurrentRaw;         // x10
+
+    float   setMaxDCCurrent;
+    int16_t setMaxDCCurrentRaw;         // x10
 } InverterData;
 
 extern InverterData invrtr;
-
-
-
 
 
 // COMMANDS TO INVERTER
@@ -78,12 +83,12 @@ void inverter_setACCurrent(int16_t acCurrent);
 void inverter_setBrakeCurrent(int16_t brakeCurrent);
 void inverter_setERPM(int32_t erpm);
 void inverter_setPosition(int16_t position);
-void inverter_setRelativeCurrent(int16_t relativeCurrent);
+void inverter_setRelativeCurrent(float relativeCurrent);
 void inverter_setRelativeBrakeCurrent(int16_t relativeBrakeCurrent);
 void inverter_setDigitalOutput(uint8_t digitalOut);
-void inverter_setMaxACCurrent(int16_t maxACCurrent);
+void inverter_setMaxACCurrent(float maxACCurrent);
 void inverter_setMaxBrakeACCurrent(int16_t maxBrakeACCurrent);
-void inverter_setMaxDCCurrent(int16_t maxDCCurrent);
+void inverter_setMaxDCCurrent(float maxDCCurrent);
 void inverter_setMaxDCBrakeCurrent(int16_t maxDCBrakeCurrent);
 void inverter_setDriveEnable(uint8_t enable);
 

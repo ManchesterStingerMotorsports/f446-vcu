@@ -39,12 +39,79 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 
+typedef enum
+{
+    TS_INACTIVE,
+    TS_ACTIVE,
+    R2D_TRANSITION,
+    R2D_MODE,
+} VcuState;
+
+typedef struct
+{
+    bool APPS1_SCS;
+    bool APPS2_SCS;
+    bool APPS_PB;
+
+    bool BPS_SCS;
+    bool BPS_PB;
+} VcuErrors;
+
+typedef struct
+{
+    bool SDC_Disconnected;
+} VcuCritErrors;
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
 #define ADC_BUF_LEN (1024 * 3)
+
+VcuErrors vcuError = {0};
+VcuCritErrors vcuCritError = {0};
+
+volatile VcuState currVcuState = TS_INACTIVE;
+volatile VcuState prevVcuState = TS_INACTIVE;
+
+uint16_t adc1Buff[ADC_BUF_LEN]; // buffer to store values read from adc1
+uint16_t volatile apps1Avg = 0;
+uint16_t volatile apps2Avg = 0;
+uint16_t volatile bpsAvg = 0;
+
+float volatile apps1Scaled = 0;
+float volatile apps2Scaled = 0;
+float volatile appsPosition = 0;
+
+float volatile appsDiff = 0;
+
+volatile bool isFaultNormal   = false;
+volatile bool isFaultCritical = false;
+
+volatile bool isBrakePressed = false;
+
+bool isCardDetected = false;
+
+// 4.5V -> 3686
+// 0.5V -> 410
+
+const uint16_t ADC_MAX = 4095;
+
+const uint16_t APPS1_MAX = 3180;
+const uint16_t APPS1_MIN = 420;
+const uint16_t APPS2_MAX = 3520;
+const uint16_t APPS2_MIN = 845;
+const uint16_t APPS_SCS_OFFSET = 0.1 / 5.0 * ADC_MAX;   // Volts offset to be considered SCS Fault
+
+const uint16_t BPS_THRESH = ADC_MAX * 0.5;
+const uint16_t BPS_SCS_UPPER = 4.75 / 5.0 * ADC_MAX;
+const uint16_t BPS_SCS_LOWER = 0.25 / 5.0 * ADC_MAX;
+
+const bool     CMD_SEL_ERPM = true;         // TRUE: ERPM, FALSE: CURRENT
+const uint32_t CMD_ERPM_MAX = 50000;        // ERPM = Motor RPM * number of the motor pole pairs
+const float    CMD_DC_CURRENT_MAX = 10;     // Amps
+const float    CMD_AC_CURRENT_MAX = 10;     // Amps
+
 
 /* USER CODE END PD */
 
@@ -153,49 +220,6 @@ void invrtrCmd_Callback(void *argument);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-typedef enum
-{
-    TS_INACTIVE,
-    TS_ACTIVE,
-    R2D_TRANSITION,
-    R2D_MODE,
-} VcuState;
-
-typedef struct
-{
-    bool APPS1_SCS;
-    bool APPS2_SCS;
-    bool APPS_PB;
-    bool APPS_BPS_PB;
-} VcuErrors;
-
-VcuErrors vcuError;
-
-volatile VcuState currVcuState = TS_INACTIVE;
-volatile VcuState prevVcuState = TS_INACTIVE;
-
-uint16_t adc1Buff[ADC_BUF_LEN]; // buffer to store values read from adc1
-uint16_t volatile apps1Avg = 0;
-uint16_t volatile apps2Avg = 0;
-uint16_t volatile bpsAvg = 0;
-
-float volatile apps1Scaled = 0;
-float volatile apps2Scaled = 0;
-float volatile appsDiff = 0;
-
-volatile bool faultNormCleared = true;
-volatile bool faultCritCleared = true;
-
-bool isCardDetected = false;
-
-// 4.5V -> 3686
-// 0.5V -> 410
-
-const uint16_t APPS1_MAX = 3180;
-const uint16_t APPS1_MIN = 420;
-const uint16_t APPS2_MAX = 3520;
-const uint16_t APPS2_MIN = 845;
-
 
 uint8_t BSP_SD_IsDetected(void)
 {
@@ -235,6 +259,8 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
+
+  HAL_Delay(1000);          // Boot Delay
 
   /* USER CODE END SysInit */
 
@@ -803,48 +829,72 @@ void ssd1306_RasterIntCallback(uint8_t r)
     ssd1306_Fill();
 
     ssd1306_SetColor(White);
-    ssd1306_DrawRect(0,  0, apps1Avg * 128 / 4095, 8);
-    ssd1306_DrawRect(0,  0, apps2Avg * 128 / 4095, 8);
+    ssd1306_DrawRect(0,  0, apps1Avg * 128 / ADC_MAX, 8);
+    ssd1306_DrawRect(0,  0, apps2Avg * 128 / ADC_MAX, 8);
 
     char msg[32];
-//    snprintf(msg, 64, "FPS: %.0lf (%ld ms)", 1 / ((float)timeDiff/1000.0), timeDiff);
-
-    snprintf(msg, 64, "R ERPM:%ld V:%d", invrtr.erpm, invrtr.inputVoltage);
-    ssd1306_SetCursor(0, 11);
-    ssd1306_WriteString(msg, Font_7x10);
-
     char *stateStr;
     switch (currVcuState)
     {
         case TS_INACTIVE:
-            stateStr = "TS OFF";
+            stateStr = "IDLE";
             break;
         case TS_ACTIVE:
-            stateStr = "TS ON";
+            stateStr = "TS";
             break;
         case R2D_TRANSITION:
-            stateStr = "R2D BUZ";
+            stateStr = "BUZ";
             break;
         case R2D_MODE:
-            stateStr = "R2D ON";
+            stateStr = "R2D";
             break;
         default:
             stateStr = "ERR";
             break;
     }
 
-    snprintf(msg, 64, "S ERPM:%ld %s", invrtr.setErpm, stateStr);
+//    snprintf(msg, 64, "FPS: %.0lf (%ld ms)", 1 / ((float)timeDiff/1000.0), timeDiff);
+    snprintf(msg, 64, "S%d%d%d P%d%d X%d (%s)",
+             vcuError.APPS1_SCS,
+             vcuError.APPS2_SCS,
+             vcuError.BPS_SCS,
+             vcuError.APPS_PB,
+             vcuError.BPS_PB,
+             vcuCritError.SDC_Disconnected,
+             stateStr
+             );
+//    snprintf(msg, 64, "R ERPM:%ld V:%d", invrtr.erpm, invrtr.inputVoltage);
+    ssd1306_SetCursor(0, 11);
+    ssd1306_WriteString(msg, Font_7x10);
+
+    snprintf(msg, 64, "S ERPM:%ld", invrtr.setErpm);
     ssd1306_SetCursor(0, 21);
     ssd1306_WriteString(msg, Font_7x10);
 }
 
+
+bool checkSCS(uint16_t value, uint16_t min, uint16_t max)
+{
+    if (value > max || value < min)
+    {
+        return true;
+    }
+    return false;
+}
 
 
 float mapValue(float value, float min_val, float max_val)
 {
     if (max_val == min_val) return 0.0f; // avoid division by zero
 
-    // TODO: Add clamping
+    if (value > max_val)
+    {
+        value = max_val;
+    }
+    else if (value < min_val)
+    {
+        value = min_val;
+    }
 
     return ((value - min_val) / (max_val - min_val));
 }
@@ -880,9 +930,15 @@ void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
         apps1Avg = apps1Avg * a + rawApps1Avg * b;
     }
 
-    apps1Scaled = 1.0 - mapValue(apps1Avg, APPS1_MIN, APPS1_MAX);
-    apps2Scaled = 1.0 - mapValue(apps2Avg, APPS2_MIN, APPS2_MAX);
+    vcuError.APPS1_SCS = checkSCS(apps1Avg, APPS1_MIN - APPS_SCS_OFFSET, APPS1_MAX + APPS_SCS_OFFSET);
+    vcuError.APPS2_SCS = checkSCS(apps2Avg, APPS2_MIN - APPS_SCS_OFFSET, APPS2_MAX + APPS_SCS_OFFSET);
+    apps1Scaled =  1.0 - mapValue(apps1Avg, APPS1_MIN, APPS1_MAX);
+    apps2Scaled =  1.0 - mapValue(apps2Avg, APPS2_MIN, APPS2_MAX);
+    appsPosition = (apps1Scaled + apps2Scaled) / 2;          // Get the average of position from both sensors
     appsDiff = apps1Scaled - apps2Scaled;
+
+    vcuError.BPS_SCS = checkSCS(bpsAvg, BPS_SCS_LOWER, BPS_SCS_UPPER);
+    isBrakePressed = (bool)(bpsAvg > BPS_THRESH);
 }
 
 // Called when buffer is completely filled
@@ -915,9 +971,15 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
         apps1Avg = apps1Avg * a + rawApps1Avg * b;
     }
 
-    apps1Scaled = 1.0 - mapValue(apps1Avg, APPS1_MIN, APPS1_MAX);
-    apps2Scaled = 1.0 - mapValue(apps2Avg, APPS2_MIN, APPS2_MAX);
+    vcuError.APPS1_SCS = checkSCS(apps1Avg, APPS1_MIN - APPS_SCS_OFFSET, APPS1_MAX + APPS_SCS_OFFSET);
+    vcuError.APPS2_SCS = checkSCS(apps2Avg, APPS2_MIN - APPS_SCS_OFFSET, APPS2_MAX + APPS_SCS_OFFSET);
+    apps1Scaled =  1.0 - mapValue(apps1Avg, APPS1_MIN, APPS1_MAX);
+    apps2Scaled =  1.0 - mapValue(apps2Avg, APPS2_MIN, APPS2_MAX);
+    appsPosition = (apps1Scaled + apps2Scaled) / 2;          // Get the average of position from both sensors
     appsDiff = apps1Scaled - apps2Scaled;
+
+    vcuError.BPS_SCS = checkSCS(bpsAvg, BPS_SCS_LOWER, BPS_SCS_UPPER);
+    isBrakePressed = (bool)(bpsAvg > BPS_THRESH);
 }
 
 
@@ -935,16 +997,21 @@ void t_main_func(void *argument)
   /* USER CODE BEGIN 5 */
     uint32_t r2dTimer = 0;
     const uint32_t R2D_PERIOD = 2000;
-    const uint32_t INVRTR_PERIOD = 10;
+    const uint32_t INVRTR_PERIOD = 20;
 
-  /* Infinite loop */
-  for(;;)
-  {
+    /* Infinite loop */
+    for(;;)
+    {
+        if (isFaultCritical)          // Force to inactive state if crit fault detected
+        {
+            currVcuState = TS_INACTIVE;
+        }
+
         // State transition checks
         switch (currVcuState)
         {
         case TS_INACTIVE:
-            if (buttonPressed_TS && faultCritCleared)
+            if (buttonPressed_TS && !isFaultCritical)
             {
                 currVcuState = TS_ACTIVE;
             }
@@ -956,7 +1023,7 @@ void t_main_func(void *argument)
                 currVcuState = TS_INACTIVE;
                 break;
             }
-            if (buttonPressed_R2D && faultNormCleared)
+            if (buttonPressed_R2D && !isFaultNormal && (appsPosition < 0.1))
             {
                 currVcuState = R2D_TRANSITION;
                 break;
@@ -969,7 +1036,7 @@ void t_main_func(void *argument)
                 currVcuState = TS_ACTIVE;
                 break;
             }
-            if (HAL_GetTick() - r2dTimer > R2D_PERIOD)
+            if ((HAL_GetTick() - r2dTimer) > R2D_PERIOD)
             {
                 currVcuState = R2D_MODE;
             }
@@ -1022,6 +1089,14 @@ void t_main_func(void *argument)
                 HAL_GPIO_WritePin(DO_SC_RELAY_GPIO_Port,  DO_SC_RELAY_Pin,  1);
                 HAL_GPIO_WritePin(DO_R2D_LIGHT_GPIO_Port, DO_R2D_LIGHT_Pin, 1);
                 HAL_GPIO_WritePin(DO_R2D_SOUND_GPIO_Port, DO_R2D_SOUND_Pin, 0);
+
+                // Set current limits
+                if (!CMD_SEL_ERPM)
+                {
+                    inverter_setMaxDCCurrent(CMD_DC_CURRENT_MAX);
+                    inverter_setMaxACCurrent(CMD_AC_CURRENT_MAX);
+                }
+
                 osTimerStart(tim_invrtrCmdHandle, INVRTR_PERIOD);
                 break;
 
@@ -1035,7 +1110,7 @@ void t_main_func(void *argument)
 
         prevVcuState = currVcuState;
         osDelay(10);
-  }
+    }
   /* USER CODE END 5 */
 }
 
@@ -1053,34 +1128,29 @@ void t_faultHandler_func(void *argument)
     static uint32_t lastAppsPbTime = 0;
     static bool appsPbDetected = false;
 
-    volatile bool checkFaultNormOK;
-    volatile bool checkFaultCritOK;
+    const uint32_t BPS_PB_PERIOD_MS = 500;
+    static uint32_t lastBpsPbTime = 0;
+    static bool bpsPbDetected = false;
 
     for(;;)
     {
         uint32_t currentTime = HAL_GetTick();
 
-        checkFaultNormOK = true;
-        checkFaultCritOK = true;
-
         // Shutdown circuit input detection
+        // Considered as a critical error
         if (HAL_GPIO_ReadPin(SC_IN_GPIO_Port, SC_IN_Pin))
         {
             HAL_GPIO_WritePin(DO_SC_LIGHT_GPIO_Port, DO_SC_LIGHT_Pin, 0);
+            vcuCritError.SDC_Disconnected = false;
         }
         else
         {
             HAL_GPIO_WritePin(DO_SC_LIGHT_GPIO_Port, DO_SC_LIGHT_Pin, 1);
-            checkFaultCritOK = false;
+            vcuCritError.SDC_Disconnected = true;
         }
 
         // APPS Plausibility check
-        if ((fabsf(appsDiff) < 0.1))
-        {
-            appsPbDetected = false;
-            vcuError.APPS_PB = false;
-        }
-        else
+        if ((fabsf(appsDiff) > 0.1)) // NOT OK
         {
             if (!appsPbDetected)
             {
@@ -1090,17 +1160,46 @@ void t_faultHandler_func(void *argument)
             else if (currentTime - lastAppsPbTime > APPS_PB_PERIOD_MS)
             {
                 vcuError.APPS_PB = true;
-//                checkFaultNormOK = false;
             }
         }
-
-        // TODO: APPS BPS Plausibility check
+        else // OK
         {
-
+            appsPbDetected = false;
+            vcuError.APPS_PB = false;
         }
 
-        faultNormCleared = checkFaultNormOK;
-        faultCritCleared = checkFaultCritOK;
+        // APPS BPS Plausibility check
+        if (isBrakePressed && appsPosition > 0.25) // NOT OK
+        {
+            if (!bpsPbDetected)
+            {
+                lastBpsPbTime = currentTime;
+                bpsPbDetected = true;
+            }
+            else if (currentTime - lastBpsPbTime > BPS_PB_PERIOD_MS)
+            {
+                vcuError.BPS_PB = true;
+            }
+        }
+        else if (appsPosition < 0.05)       // only clear the flag if apps returns below 5%
+        {
+            bpsPbDetected = false;
+            vcuError.BPS_PB = false;
+        }
+
+
+        // Update the fault flags
+        isFaultNormal = (
+                vcuError.APPS1_SCS ||
+                vcuError.APPS2_SCS ||
+                vcuError.APPS_PB ||
+                vcuError.BPS_SCS ||
+                vcuError.BPS_PB
+            );
+
+        isFaultCritical = (
+                vcuCritError.SDC_Disconnected
+            );
 
         static uint8_t ledCounter = 0;
         if (ledCounter++ > 50)
@@ -1218,27 +1317,29 @@ void t_logging_func(void *argument)
 void invrtrCmd_Callback(void *argument)
 {
   /* USER CODE BEGIN invrtrCmd_Callback */
-    const uint32_t maxErpm = 50000;
-    float appsPosition = (apps1Scaled + apps2Scaled) / 2;
-//    apps1Scaled = (float) apps1Avg / 4095.0;
-    if (vcuError.APPS_PB)
+    const float MIN_POS = 0.05;
+    const float MAX_POS = 0.95;
+    float responseMult  = mapValue(appsPosition, MIN_POS, MAX_POS);
+
+    if (isFaultNormal)
     {
         invrtr.setErpm = 0;
-    }
-    else if (appsPosition > 0.90)
-    {
-        invrtr.setErpm = (uint32_t) (1.0 * maxErpm);
-    }
-    else if (appsPosition > 0.1)
-    {
-        invrtr.setErpm = (uint32_t) (appsPosition * maxErpm);
+        invrtr.setRelativeCurrent = 0;
     }
     else
     {
-        invrtr.setErpm = 0;
+        invrtr.setErpm = (uint32_t) (responseMult * CMD_ERPM_MAX);
+        invrtr.setRelativeCurrent = responseMult;
     }
 
-    inverter_setERPM((uint32_t) invrtr.setErpm);
+    if (CMD_SEL_ERPM)
+    {
+        inverter_setERPM((uint32_t) invrtr.setErpm);
+    }
+    else
+    {
+        inverter_setRelativeCurrent(invrtr.setRelativeCurrent);
+    }
     inverter_setDriveEnable(1);
 
     const uint32_t cmdID = 0x20;
